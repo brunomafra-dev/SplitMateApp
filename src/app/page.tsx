@@ -92,34 +92,32 @@ export default function Home() {
   useEffect(() => {
     const run = async () => {
       setLoading(true)
-
-      const {
-        data: { session },
-      } = await supabase.auth.getSession()
-
-      if (!session) {
-        setLoading(false)
-        router.replace('/login')
-        return
-      }
-
-      const myId = session.user.id
-
       try {
-        localStorage.removeItem('divideai_groups')
-      } catch {}
+        const {
+          data: { session },
+        } = await supabase.auth.getSession()
 
-      const { data: groupRows, error: gErr } = await supabase
-        .from('groups')
-        .select('id,name')
+        if (!session) {
+          router.replace('/login')
+          return
+        }
 
-      if (gErr) {
-        console.error('Erro ao carregar groups:', gErr.message)
-        setGroups([])
-        setTotalBalance(0)
-        setLoading(false)
-        return
-      }
+        const myId = session.user.id
+
+        try {
+          localStorage.removeItem('divideai_groups')
+        } catch {}
+
+        const { data: groupRows, error: gErr } = await supabase
+          .from('groups')
+          .select('id,name')
+
+        if (gErr) {
+          console.error('Erro ao carregar groups:', gErr.message)
+          setGroups([])
+          setTotalBalance(0)
+          return
+        }
 
       let txRows: any[] | null = null
       let tErr: any = null
@@ -161,22 +159,22 @@ export default function Home() {
         console.error('Erro ao carregar payments:', pErr.message)
       }
 
-      const safeGroups: GroupRow[] = (groupRows as any) || []
-      const membersByGroup = await fetchGroupMembersMap(safeGroups.map((group) => group.id))
+        const safeGroups: GroupRow[] = (groupRows as any) || []
+        const membersByGroup = await fetchGroupMembersMap(safeGroups.map((group) => group.id))
 
-      const safeTx: TransactionRow[] = ((txRows as any) || []).map((t: any) => ({
-        ...t,
-        value: Number(t.value) || 0,
-      }))
+        const safeTx: TransactionRow[] = ((txRows as any) || []).map((t: any) => ({
+          ...t,
+          value: Number(t.value) || 0,
+        }))
 
-      const safePayments: PaymentRow[] = ((payRows as any) || []).map((p: any) => ({
-        ...p,
-        amount: Number(p.amount) || 0,
-      }))
+        const safePayments: PaymentRow[] = ((payRows as any) || []).map((p: any) => ({
+          ...p,
+          amount: Number(p.amount) || 0,
+        }))
 
-      let global = 0
+        let global = 0
 
-      const uiGroups: GroupUI[] = safeGroups.map((g) => {
+        const uiGroups: GroupUI[] = safeGroups.map((g) => {
         const members = (membersByGroup.get(g.id) || []) as GroupMember[]
         const participantsCount = members.length
         const currentParticipantIds = members.map((m) => m.id).filter(Boolean)
@@ -243,10 +241,16 @@ export default function Home() {
         }
       })
 
-      const normalizedGlobal = Math.abs(global) <= 0.009 ? 0 : Number(global.toFixed(2))
-      setGroups(uiGroups)
-      setTotalBalance(normalizedGlobal)
-      setLoading(false)
+        const normalizedGlobal = Math.abs(global) <= 0.009 ? 0 : Number(global.toFixed(2))
+        setGroups(uiGroups)
+        setTotalBalance(normalizedGlobal)
+      } catch (error) {
+        console.error('home.load-unhandled-error', error)
+        setGroups([])
+        setTotalBalance(0)
+      } finally {
+        setLoading(false)
+      }
     }
 
     run()

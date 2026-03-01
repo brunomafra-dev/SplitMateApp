@@ -68,48 +68,47 @@ export default function Payments() {
 
   const load = useCallback(async () => {
     setLoading(true)
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
 
-    const {
-      data: { session },
-    } = await supabase.auth.getSession()
+      if (!session) {
+        router.replace('/login')
+        return
+      }
 
-    if (!session) {
-      router.replace('/login')
-      return
-    }
+      const currentUserId = session.user.id
+      setMyId(currentUserId)
 
-    const currentUserId = session.user.id
-    setMyId(currentUserId)
+      const { data: groupsData, error: groupsError } = await supabase
+        .from('groups')
+        .select('id,name')
 
-    const { data: groupsData, error: groupsError } = await supabase
-      .from('groups')
-      .select('id,name')
+      if (groupsError) {
+        console.error('payments.groups-load-error', groupsError)
+        setPayments([])
+        return
+      }
 
-    if (groupsError) {
-      console.error('payments.groups-load-error', groupsError)
-      setPayments([])
-      setLoading(false)
-      return
-    }
+      const { data: txData, error: txError } = await supabase
+        .from('transactions')
+        .select('*')
+        .order('created_at', { ascending: false })
 
-    const { data: txData, error: txError } = await supabase
-      .from('transactions')
-      .select('*')
-      .order('created_at', { ascending: false })
+      if (txError) console.error('payments.transactions-load-error', txError)
 
-    if (txError) console.error('payments.transactions-load-error', txError)
+      const { data: payData, error: payError } = await supabase
+        .from('payments')
+        .select('id,group_id,from_user,to_user,amount,created_at')
+        .order('created_at', { ascending: false })
 
-    const { data: payData, error: payError } = await supabase
-      .from('payments')
-      .select('id,group_id,from_user,to_user,amount,created_at')
-      .order('created_at', { ascending: false })
+      if (payError) console.error('payments.payments-load-error', payError)
 
-    if (payError) console.error('payments.payments-load-error', payError)
-
-    const groups = (groupsData || []) as GroupRow[]
-    const membersByGroup = await fetchGroupMembersMap(groups.map((group) => group.id))
-    const txRows = ((txData as TransactionRow[] | null) || []).map((tx) => ({ ...tx, value: Number(tx.value) || 0 }))
-    const payRows = ((payData as PaymentRow[] | null) || []).map((p) => ({ ...p, amount: Number(p.amount) || 0 }))
+      const groups = (groupsData || []) as GroupRow[]
+      const membersByGroup = await fetchGroupMembersMap(groups.map((group) => group.id))
+      const txRows = ((txData as TransactionRow[] | null) || []).map((tx) => ({ ...tx, value: Number(tx.value) || 0 }))
+      const payRows = ((payData as PaymentRow[] | null) || []).map((p) => ({ ...p, amount: Number(p.amount) || 0 }))
 
     const groupMap = new Map<string, GroupRow>()
     groups.forEach((g) => groupMap.set(g.id, g))
@@ -210,13 +209,18 @@ export default function Payments() {
         groupName: groupMap.get(p.group_id)?.name || 'Grupo',
       }))
 
-    const merged = [...paidFromPayments, ...pendingFromTransactions].sort(
-      (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
-    )
+      const merged = [...paidFromPayments, ...pendingFromTransactions].sort(
+        (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+      )
 
-    setPayments(merged)
-    setSelfPaidTotal(Number(computedSelfPaid.toFixed(2)))
-    setLoading(false)
+      setPayments(merged)
+      setSelfPaidTotal(Number(computedSelfPaid.toFixed(2)))
+    } catch (error) {
+      console.error('payments.load-unhandled-error', error)
+      setPayments([])
+    } finally {
+      setLoading(false)
+    }
   }, [router])
 
   useEffect(() => {
@@ -268,6 +272,7 @@ export default function Payments() {
       }
 
       await load()
+      router.refresh()
     } finally {
       setSavingId(null)
     }
