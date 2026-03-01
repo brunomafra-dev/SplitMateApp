@@ -97,6 +97,7 @@ export default function InviteTokenPage() {
         }
 
         router.replace(`/group/${invite.group_id}`)
+        router.refresh()
       } catch (error) {
         console.error(error)
         setMessage('Erro ao processar convite')

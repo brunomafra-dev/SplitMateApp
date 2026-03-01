@@ -196,7 +196,8 @@ export default function AddExpense() {
       return
     }
 
-    router.push(`/group/${groupId}`)
+    router.replace(`/group/${groupId}`)
+    router.refresh()
   }
 
   if (loading) {

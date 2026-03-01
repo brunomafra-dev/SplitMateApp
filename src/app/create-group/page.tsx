@@ -36,6 +36,18 @@ export default function CreateGroup() {
   const [createdGroupId, setCreatedGroupId] = useState<string | null>(null)
   const [inviteLink, setInviteLink] = useState('')
 
+  const withTimeout = async <T,>(promise: Promise<T>, timeoutMs: number, timeoutMessage: string) => {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        const timer = setTimeout(() => {
+          clearTimeout(timer)
+          reject(new Error(timeoutMessage))
+        }, timeoutMs)
+      }),
+    ])
+  }
+
   const handleCreateGroup = async () => {
     const trimmedGroupName = groupName.trim()
 
@@ -99,20 +111,37 @@ export default function CreateGroup() {
 
       if (generateInviteOnCreate) {
         const token = generateSecureInviteToken()
-        const { error: inviteError } = await supabase.from('invite_tokens').insert({
-          group_id: data.id,
-          created_by: user.id,
-          token,
-        })
+        const { error: inviteError } = await withTimeout(
+          supabase.from('invite_tokens').insert({
+            group_id: data.id,
+            created_by: user.id,
+            token,
+          }),
+          10000,
+          'create-group.invite-timeout'
+        )
 
         if (!inviteError) {
           setInviteLink(buildInviteLink(token))
           setCreatedGroupId(data.id)
           return
         }
+
+        console.error('create-group.invite-insert-error', {
+          code: inviteError.code,
+          message: inviteError.message,
+          details: inviteError.details,
+          hint: inviteError.hint,
+        })
       }
 
       router.push(`/group/${data.id}`)
+    } catch (error: any) {
+      console.error('create-group.unhandled-error', {
+        message: String(error?.message || ''),
+        raw: error,
+      })
+      alert('Erro ao criar grupo. Tente novamente.')
     } finally {
       setLoading(false)
     }
