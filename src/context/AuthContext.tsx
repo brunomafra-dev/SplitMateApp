@@ -24,6 +24,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    const getSessionWithTimeout = async (timeoutMs: number) => {
+      const timeoutPromise = new Promise<null>((resolve) => {
+        setTimeout(() => resolve(null), timeoutMs)
+      })
+
+      try {
+        const result = (await Promise.race([
+          supabase.auth.getSession(),
+          timeoutPromise,
+        ])) as { data?: { session?: Session | null } } | null
+
+        return result?.data?.session ?? null
+      } catch (error) {
+        console.error('auth.get-session-error', error)
+        return null
+      }
+    }
+
     const ensureIdentity = async (sessionUser: User | null) => {
       if (!sessionUser) return
 
@@ -62,20 +80,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     }
 
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
+    const init = async () => {
+      const session = await getSessionWithTimeout(5000)
       setSession(session)
       setUser(session?.user ?? null)
-      await ensureIdentity(session?.user ?? null)
-      setLoading(false)
-    })
+
+      try {
+        await ensureIdentity(session?.user ?? null)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    init()
 
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (_event, session) => {
       setSession(session)
       setUser(session?.user ?? null)
-      await ensureIdentity(session?.user ?? null)
-      setLoading(false)
+      try {
+        await ensureIdentity(session?.user ?? null)
+      } finally {
+        setLoading(false)
+      }
     })
 
     return () => subscription.unsubscribe()
