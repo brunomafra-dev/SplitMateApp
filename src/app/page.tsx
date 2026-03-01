@@ -251,6 +251,22 @@ export default function Home() {
 
     run()
 
+    const channel = supabase
+      .channel('home-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'groups' }, () => {
+        run()
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'participants' }, () => {
+        run()
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions' }, () => {
+        run()
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'payments' }, () => {
+        run()
+      })
+      .subscribe()
+
     const onFocus = () => {
       run()
     }
@@ -265,6 +281,7 @@ export default function Home() {
     document.addEventListener('visibilitychange', onVisibilityChange)
 
     return () => {
+      supabase.removeChannel(channel)
       window.removeEventListener('focus', onFocus)
       document.removeEventListener('visibilitychange', onVisibilityChange)
     }

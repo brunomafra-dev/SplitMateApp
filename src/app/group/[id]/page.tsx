@@ -8,6 +8,7 @@ import { supabase } from '@/lib/supabase'
 import { calculateUserBalance, type BalancePayment, type BalanceTransaction } from '@/lib/balance'
 import { generateSecureInviteToken } from '@/lib/invites'
 import { buildInviteLink } from '@/lib/site-url'
+import BottomNav from '@/components/ui/bottom-nav'
 
 interface Participant {
   id: string
@@ -643,7 +644,7 @@ export default function GroupPage() {
         </div>
       )}
 
-      <main className="flex-1 overflow-y-auto max-w-4xl w-full mx-auto px-4 py-6 pb-28">
+      <main className="flex-1 overflow-y-auto max-w-4xl w-full mx-auto px-4 py-6 pb-[calc(8rem+env(safe-area-inset-bottom))]">
         {group.transactions.length === 0 ? (
           <div className="text-center py-12">
             <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -728,10 +729,11 @@ export default function GroupPage() {
       </div>
 
       <Link href={`/group/${groupId}/add-expense`}>
-        <button className="fixed bottom-6 right-6 w-16 h-16 bg-[#5BC5A7] rounded-full flex items-center justify-center shadow-lg hover:bg-[#4AB396] transition-all hover:scale-110 z-40" type="button">
+        <button className="fixed right-6 w-16 h-16 bg-[#5BC5A7] rounded-full flex items-center justify-center shadow-lg hover:bg-[#4AB396] transition-all hover:scale-110 z-40 bottom-[calc(5.5rem+env(safe-area-inset-bottom))]" type="button">
           <Plus className="w-8 h-8 text-white" />
         </button>
       </Link>
+      <BottomNav />
     </div>
   )
 }

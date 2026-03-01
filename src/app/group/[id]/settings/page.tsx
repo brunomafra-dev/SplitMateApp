@@ -1,17 +1,17 @@
 'use client'
 
-import { ArrowLeft, Plus, Trash2, X } from 'lucide-react'
+import { ArrowLeft, Trash2 } from 'lucide-react'
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import BottomNav from '@/components/ui/bottom-nav'
 
 type Category = 'apartment' | 'house' | 'trip' | 'other'
 
 interface Participant {
   id: string
   name: string
-  email?: string
 }
 
 const categories: Array<{ id: Category; label: string; icon: string }> = [
@@ -30,14 +30,11 @@ export default function GroupSettings() {
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
 
-  const [currentUserId, setCurrentUserId] = useState<string>('')
   const [isOwner, setIsOwner] = useState(false)
 
   const [groupName, setGroupName] = useState('')
   const [category, setCategory] = useState<Category>('other')
   const [participants, setParticipants] = useState<Participant[]>([])
-  const [newParticipantName, setNewParticipantName] = useState('')
-  const [newParticipantEmail, setNewParticipantEmail] = useState('')
 
   useEffect(() => {
     const load = async () => {
@@ -52,11 +49,9 @@ export default function GroupSettings() {
         return
       }
 
-      setCurrentUserId(session.user.id)
-
       const { data, error } = await supabase
         .from('groups')
-        .select('id,name,category,owner_id,participants')
+        .select('id,name,category,owner_id')
         .eq('id', groupId)
         .single()
 
@@ -100,9 +95,47 @@ export default function GroupSettings() {
       setGroupName(data.name || '')
       setCategory((data.category || 'other') as Category)
 
-      const loadedParticipants: Participant[] = Array.isArray(data.participants)
-        ? data.participants
-        : []
+      const { data: participantRows, error: participantsError } = await supabase
+        .from('participants')
+        .select('user_id')
+        .eq('group_id', groupId)
+
+      if (participantsError) {
+        console.error('group.settings-participants-load-error', participantsError)
+      }
+
+      const participantIds = ((participantRows as Array<{ user_id?: string }> | null) ?? [])
+        .map((row) => String(row.user_id || '').trim())
+        .filter(Boolean)
+
+      let profileMap = new Map<string, { username?: string; full_name?: string }>()
+      if (participantIds.length > 0) {
+        const { data: profileRows, error: profilesError } = await supabase
+          .from('profiles')
+          .select('id,username,full_name')
+          .in('id', participantIds)
+
+        if (profilesError) {
+          console.error('group.settings-profiles-load-error', profilesError)
+        } else {
+          for (const row of profileRows ?? []) {
+            const id = String((row as { id?: string }).id || '').trim()
+            if (!id) continue
+            profileMap.set(id, {
+              username: String((row as { username?: string }).username || '').trim(),
+              full_name: String((row as { full_name?: string }).full_name || '').trim(),
+            })
+          }
+        }
+      }
+
+      const loadedParticipants: Participant[] = participantIds.map((id) => {
+        const profile = profileMap.get(id)
+        return {
+          id,
+          name: profile?.username || profile?.full_name || 'Usuario',
+        }
+      })
 
       setParticipants(loadedParticipants)
       setLoading(false)
@@ -110,30 +143,6 @@ export default function GroupSettings() {
 
     load()
   }, [groupId, router])
-
-  const addParticipant = () => {
-    const name = newParticipantName.trim()
-    const email = newParticipantEmail.trim()
-
-    if (!name) return
-
-    setParticipants((prev) => [
-      ...prev,
-      {
-        id: crypto.randomUUID(),
-        name,
-        email: email || undefined,
-      },
-    ])
-
-    setNewParticipantName('')
-    setNewParticipantEmail('')
-  }
-
-  const removeParticipant = (id: string) => {
-    if (id === currentUserId) return
-    setParticipants((prev) => prev.filter((p) => p.id !== id))
-  }
 
   const handleSave = async () => {
     if (!isOwner) {
@@ -143,13 +152,8 @@ export default function GroupSettings() {
 
     const trimmedName = groupName.trim()
 
-    if (!trimmedName || participants.length < 2) {
-      alert('Adicione um nome e pelo menos 2 participantes')
-      return
-    }
-
-    if (!participants.some((p) => p.id === currentUserId)) {
-      alert('Voce precisa permanecer como participante do grupo')
+    if (!trimmedName) {
+      alert('Adicione um nome para o grupo')
       return
     }
 
@@ -160,7 +164,6 @@ export default function GroupSettings() {
       .update({
         name: trimmedName,
         category,
-        participants,
       })
       .eq('id', groupId)
       .select('id')
@@ -187,7 +190,8 @@ export default function GroupSettings() {
       return
     }
 
-    router.push(`/group/${groupId}`)
+    router.replace(`/group/${groupId}`)
+    router.refresh()
   }
 
   const handleDeleteGroup = async () => {
@@ -267,7 +271,7 @@ export default function GroupSettings() {
   }
 
   return (
-    <div className="min-h-screen bg-[#F7F7F7]">
+    <div className="min-h-screen bg-[#F7F7F7] flex flex-col overflow-x-hidden">
       <header className="bg-white shadow-sm">
         <div className="max-w-4xl mx-auto px-4 py-4 flex justify-between items-center">
           <Link href={`/group/${groupId}`}>
@@ -287,7 +291,7 @@ export default function GroupSettings() {
         </div>
       </header>
 
-      <main className="max-w-4xl mx-auto px-4 py-6 space-y-6">
+      <main className="flex-1 overflow-y-auto max-w-4xl w-full mx-auto px-4 py-6 pb-[calc(8rem+env(safe-area-inset-bottom))] space-y-6">
         <div className="bg-white rounded-xl p-4 shadow-sm">
           <label className="block text-sm font-medium text-gray-700 mb-2">Nome do grupo</label>
           <input
@@ -328,43 +332,9 @@ export default function GroupSettings() {
               <div key={participant.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                 <div>
                   <p className="font-medium text-gray-800">{participant.name}</p>
-                  {participant.email && <p className="text-xs text-gray-500">{participant.email}</p>}
                 </div>
-                {isOwner && participant.id !== currentUserId && (
-                  <button onClick={() => removeParticipant(participant.id)} type="button">
-                    <X className="w-5 h-5 text-gray-400 hover:text-red-500" />
-                  </button>
-                )}
               </div>
             ))}
-          </div>
-
-          <div className="space-y-2 pt-4 border-t border-gray-200">
-            <input
-              type="text"
-              value={newParticipantName}
-              onChange={(e) => setNewParticipantName(e.target.value)}
-              placeholder="Nome do participante"
-              disabled={!isOwner}
-              className="w-full px-4 py-2 border border-gray-200 rounded-lg"
-            />
-            <input
-              type="email"
-              value={newParticipantEmail}
-              onChange={(e) => setNewParticipantEmail(e.target.value)}
-              placeholder="Email (opcional)"
-              disabled={!isOwner}
-              className="w-full px-4 py-2 border border-gray-200 rounded-lg"
-            />
-            <button
-              onClick={addParticipant}
-              disabled={!isOwner}
-              className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-[#5BC5A7] text-white rounded-lg"
-              type="button"
-            >
-              <Plus className="w-4 h-4" />
-              Adicionar participante
-            </button>
           </div>
         </div>
 
@@ -383,6 +353,7 @@ export default function GroupSettings() {
           </div>
         )}
       </main>
+      <BottomNav />
     </div>
   )
 }

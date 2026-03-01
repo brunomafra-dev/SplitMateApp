@@ -221,6 +221,26 @@ export default function Payments() {
 
   useEffect(() => {
     load()
+
+    const channel = supabase
+      .channel('payments-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'payments' }, () => {
+        load()
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions' }, () => {
+        load()
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'participants' }, () => {
+        load()
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'groups' }, () => {
+        load()
+      })
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
   }, [load])
 
   const handleMarkAsReceived = async (payment: Payment) => {

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import BottomNav from "@/components/ui/bottom-nav";
 
 interface Participant {
   id: string;
@@ -264,7 +265,7 @@ export default function EditExpensePage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#F7F7F7]">
+    <div className="min-h-screen bg-[#F7F7F7] flex flex-col overflow-x-hidden">
       <header className="bg-white shadow-sm">
         <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
           <Link href={`/group/${groupId}`}>
@@ -293,7 +294,7 @@ export default function EditExpensePage() {
         </div>
       </header>
 
-      <main className="max-w-4xl mx-auto px-4 py-6 space-y-6">
+      <main className="flex-1 overflow-y-auto max-w-4xl w-full mx-auto px-4 py-6 pb-[calc(8rem+env(safe-area-inset-bottom))] space-y-6">
         {/* Valor */}
         <div className="bg-white p-6 rounded-xl shadow-sm">
           <label className="text-gray-600 font-medium">Valor</label>
@@ -419,6 +420,7 @@ export default function EditExpensePage() {
           )}
         </div>
       </main>
+      <BottomNav />
     </div>
   );
 }
