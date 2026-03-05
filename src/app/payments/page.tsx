@@ -1,6 +1,6 @@
 ﻿'use client'
 
-import { ArrowLeft, CheckCircle, Clock, TrendingDown, TrendingUp, X } from 'lucide-react'
+import { ArrowLeft, CheckCircle, Clock, TrendingDown, TrendingUp } from 'lucide-react'
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
@@ -60,13 +60,6 @@ interface PersonPendingSummary {
   avatarKey?: string
   isPremium?: boolean
   totalAmount: number
-  items: Payment[]
-}
-
-function buildChargeMessage(groupName: string, amount: number, pixCode?: string): string {
-  const amountText = amount.toFixed(2).replace('.', ',')
-  const pixBlock = pixCode?.trim() ? `\n\nPIX copia e cola:\n${pixCode.trim()}` : ''
-  return `Olá! 😊\nVocê ficou com R$ ${amountText} referente ao grupo ${groupName}.\nQuando puder, me envia via PIX por favor. Obrigado!${pixBlock}`
 }
 
 export default function Payments() {
@@ -77,11 +70,8 @@ export default function Payments() {
   const [loading, setLoading] = useState(true)
   const hasLoadedOnceRef = useRef(false)
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
-  const [savingId, setSavingId] = useState<string | null>(null)
   const [myId, setMyId] = useState<string | null>(null)
   const [showMyBalance, setShowMyBalance] = useState(true)
-  const [chargeTarget, setChargeTarget] = useState<Payment | null>(null)
-  const [pixCopyPaste, setPixCopyPaste] = useState('')
 
   const toCents = (value: number) => Math.round((Number(value) || 0) * 100)
   const fromCents = (cents: number) => Number((cents / 100).toFixed(2))
@@ -288,53 +278,11 @@ export default function Payments() {
     }
   }, [load])
 
-  const copyChargeMessage = async (payment: Payment) => {
-    await navigator.clipboard.writeText(buildChargeMessage(payment.groupName, payment.amount, pixCopyPaste))
-    setFeedback({ type: 'success', text: 'Mensagem copiada.' })
-  }
-
-  const shareChargeMessage = async (payment: Payment) => {
-    const message = buildChargeMessage(payment.groupName, payment.amount, pixCopyPaste)
-    if (typeof navigator.share === 'function') {
-      try {
-        await navigator.share({ title: `Cobranca - ${payment.groupName}`, text: message })
-        return
-      } catch {
-        // fallback
-      }
-    }
-    await navigator.clipboard.writeText(message)
-    setFeedback({ type: 'success', text: 'Mensagem copiada para compartilhamento.' })
-  }
-
   const filteredPayments = useMemo(() => {
     return payments.filter((payment) => (filter === 'all' ? true : payment.status === filter))
   }, [payments, filter])
 
   const pendingPayments = useMemo(() => filteredPayments.filter((p) => p.status === 'pending'), [filteredPayments])
-
-  const receivableByPerson = useMemo(() => {
-    if (!myId) return [] as PersonPendingSummary[]
-    const grouped = new Map<string, PersonPendingSummary>()
-    for (const item of pendingPayments) {
-      if (item.toUserId !== myId) continue
-      const current = grouped.get(item.fromUserId)
-      if (current) {
-        current.totalAmount = fromCents(toCents(current.totalAmount) + toCents(item.amount))
-        current.items.push(item)
-      } else {
-        grouped.set(item.fromUserId, {
-          personUserId: item.fromUserId,
-          name: item.from,
-          avatarKey: item.fromAvatarKey,
-          isPremium: item.fromIsPremium,
-          totalAmount: item.amount,
-          items: [item],
-        })
-      }
-    }
-    return Array.from(grouped.values()).sort((a, b) => b.totalAmount - a.totalAmount)
-  }, [pendingPayments, myId])
 
   const payableByPerson = useMemo(() => {
     if (!myId) return [] as PersonPendingSummary[]
@@ -344,7 +292,6 @@ export default function Payments() {
       const current = grouped.get(item.toUserId)
       if (current) {
         current.totalAmount = fromCents(toCents(current.totalAmount) + toCents(item.amount))
-        current.items.push(item)
       } else {
         grouped.set(item.toUserId, {
           personUserId: item.toUserId,
@@ -352,7 +299,6 @@ export default function Payments() {
           avatarKey: item.toAvatarKey,
           isPremium: item.toIsPremium,
           totalAmount: item.amount,
-          items: [item],
         })
       }
     }
@@ -409,37 +355,6 @@ export default function Payments() {
       .filter((item) => toCents(item.amount) !== 0)
       .sort((a, b) => Math.abs(toCents(b.amount)) - Math.abs(toCents(a.amount)))
   }, [payments, myId])
-
-  const handleMarkPersonAsPaid = async (summary: PersonPendingSummary) => {
-    if (!myId) return
-    const savingKey = `person_pay_${summary.personUserId}`
-    setSavingId(savingKey)
-    try {
-      for (const payment of summary.items) {
-        const { error } = await supabase.from('payments').insert({
-          group_id: payment.groupId,
-          from_user: payment.fromUserId,
-          to_user: payment.toUserId,
-          amount: payment.amount,
-        })
-        if (error) {
-          console.error('payments.mark-person-paid-error', {
-            code: error.code,
-            message: error.message,
-            details: error.details,
-            hint: error.hint,
-            payment,
-          })
-          setFeedback({ type: 'error', text: `Erro ao marcar como pago para ${summary.name}.` })
-          return
-        }
-      }
-      setFeedback({ type: 'success', text: `Pagamento marcado para ${summary.name}.` })
-      await load(false)
-    } finally {
-      setSavingId(null)
-    }
-  }
 
   if (loading) {
     return (
@@ -531,55 +446,6 @@ export default function Payments() {
               <>
                 <div className="surface-card p-4">
                   <div className="flex items-center justify-between mb-3">
-                    <h3 className="text-base font-semibold text-gray-800">A receber</h3>
-                    <span className="text-xs px-2 py-1 rounded-full bg-green-50 text-[#5BC5A7]">{receivableByPerson.length} pessoa(s)</span>
-                  </div>
-                  {receivableByPerson.length === 0 ? (
-                    <p className="text-sm text-gray-600">Nenhuma pessoa te devendo no momento.</p>
-                  ) : (
-                    <div className="space-y-2">
-                      {receivableByPerson.map((person) => (
-                        <div key={person.personUserId} className="p-3 rounded-lg border border-gray-200 bg-gray-50">
-                          <div className="flex items-center justify-between gap-2">
-                            <div className="flex items-center gap-2 min-w-0">
-                              <UserAvatar name={person.name} avatarKey={person.avatarKey} isPremium={person.isPremium} className="w-8 h-8" textClassName="text-xs" />
-                              <p className="text-sm font-medium text-gray-800 truncate">{person.name}</p>
-                            </div>
-                            <p className="text-sm font-semibold text-[#5BC5A7]">{showMyBalance ? `R$ ${person.totalAmount.toFixed(2)}` : 'Oculto'}</p>
-                          </div>
-                          <button
-                            onClick={() => {
-                              const synthetic: Payment = {
-                                id: `charge_person_${person.personUserId}`,
-                                description: 'Cobrança consolidada',
-                                amount: person.totalAmount,
-                                from: person.name,
-                                to: 'Voce',
-                                fromUserId: person.personUserId,
-                                toUserId: myId || '',
-                                groupId: person.items[0]?.groupId || '',
-                                status: 'pending',
-                                date: person.items[0]?.date || new Date().toISOString(),
-                                groupName: person.items.length === 1 ? person.items[0].groupName : 'Consolidado',
-                                fromAvatarKey: person.avatarKey,
-                                fromIsPremium: person.isPremium,
-                              }
-                              setChargeTarget(synthetic)
-                              setPixCopyPaste('')
-                            }}
-                            className="mt-2 w-full tap-target pressable py-2 border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-100"
-                            type="button"
-                          >
-                            Cobrar
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                <div className="surface-card p-4">
-                  <div className="flex items-center justify-between mb-3">
                     <h3 className="text-base font-semibold text-gray-800">A pagar</h3>
                     <span className="text-xs px-2 py-1 rounded-full bg-red-50 text-[#FF6B6B]">{payableByPerson.length} pessoa(s)</span>
                   </div>
@@ -587,28 +453,18 @@ export default function Payments() {
                     <p className="text-sm text-gray-600">Nenhuma dívida sua pendente no momento.</p>
                   ) : (
                     <div className="space-y-2">
-                      {payableByPerson.map((person) => {
-                        const savingKey = `person_pay_${person.personUserId}`
-                        return (
-                          <div key={person.personUserId} className="p-3 rounded-lg border border-gray-200 bg-gray-50">
-                            <div className="flex items-center justify-between gap-2">
-                              <div className="flex items-center gap-2 min-w-0">
-                                <UserAvatar name={person.name} avatarKey={person.avatarKey} isPremium={person.isPremium} className="w-8 h-8" textClassName="text-xs" />
-                                <p className="text-sm font-medium text-gray-800 truncate">{person.name}</p>
-                              </div>
-                              <p className="text-sm font-semibold text-[#FF6B6B]">{showMyBalance ? `R$ ${person.totalAmount.toFixed(2)}` : 'Oculto'}</p>
+                      {payableByPerson.map((person) => (
+                        <div key={person.personUserId} className="p-3 rounded-lg border border-gray-200 bg-gray-50">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <UserAvatar name={person.name} avatarKey={person.avatarKey} isPremium={person.isPremium} className="w-8 h-8" textClassName="text-xs" />
+                              <p className="text-sm font-medium text-gray-800 truncate">{person.name}</p>
                             </div>
-                            <button
-                              onClick={() => handleMarkPersonAsPaid(person)}
-                              disabled={savingId === savingKey}
-                              className={`mt-2 w-full tap-target pressable py-2 bg-[#5BC5A7] text-white rounded-lg font-medium hover:bg-[#4AB396] disabled:opacity-60 ${savingId === savingKey ? 'animate-pulse' : ''}`}
-                              type="button"
-                            >
-                              {savingId === savingKey ? 'Salvando...' : 'Marcar como pago'}
-                            </button>
+                            <p className="text-sm font-semibold text-[#FF6B6B]">{showMyBalance ? `R$ ${person.totalAmount.toFixed(2)}` : 'Oculto'}</p>
                           </div>
-                        )
-                      })}
+                          <p className="mt-1 text-xs text-gray-500">Valor pendente com este participante.</p>
+                        </div>
+                      ))}
                     </div>
                   )}
                 </div>
@@ -641,53 +497,6 @@ export default function Payments() {
           </div>
         )}
       </main>
-
-      {chargeTarget && (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center px-4 pt-4 pb-[calc(6.5rem+env(safe-area-inset-bottom))] sm:p-4">
-          <div className="bg-white w-full max-w-md rounded-2xl shadow-xl p-4 space-y-4 max-h-[calc(100dvh-9rem-env(safe-area-inset-bottom))] sm:max-h-[85vh] overflow-y-auto">
-            <div className="flex items-center justify-between">
-              <h3 className="text-base font-semibold text-gray-800">Cobrar pagamento</h3>
-              <button onClick={() => setChargeTarget(null)} type="button" className="tap-target pressable text-gray-500 hover:text-gray-700">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="text-sm space-y-1">
-              <p><span className="text-gray-500">Grupo:</span> <span className="font-medium text-gray-800">{chargeTarget.groupName}</span></p>
-              <p><span className="text-gray-500">Valor:</span> <span className="font-medium text-gray-800">R$ {chargeTarget.amount.toFixed(2)}</span></p>
-            </div>
-
-            <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
-              <p className="text-xs text-gray-500 mb-2">Mensagem de cobranca</p>
-              <input
-                type="text"
-                value={pixCopyPaste}
-                onChange={(e) => setPixCopyPaste(e.target.value)}
-                placeholder="Cole aqui o PIX copia e cola (opcional)"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm mb-2"
-              />
-              <p className="text-sm text-gray-700 whitespace-pre-line">{buildChargeMessage(chargeTarget.groupName, chargeTarget.amount, pixCopyPaste)}</p>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                onClick={() => copyChargeMessage(chargeTarget)}
-                className="tap-target pressable py-2 border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-100"
-                type="button"
-              >
-                Copiar mensagem
-              </button>
-              <button
-                onClick={() => shareChargeMessage(chargeTarget)}
-                className="tap-target pressable py-2 bg-gray-800 text-white rounded-lg font-medium"
-                type="button"
-              >
-                Compartilhar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       <div className="max-w-4xl w-full mx-auto px-4 py-4">
         <div className="bg-gray-100 rounded-xl p-4 text-center border-2 border-dashed border-gray-300">
