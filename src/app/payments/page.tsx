@@ -8,6 +8,7 @@ import { supabase } from '@/lib/supabase'
 import BottomNav from '@/components/ui/bottom-nav'
 import { fetchGroupMembersMap } from '@/lib/group-members'
 import UserAvatar from '@/components/user-avatar'
+import { computePendingEdges } from '@/lib/pending-balances'
 
 interface GroupRow {
   id: string
@@ -53,6 +54,15 @@ interface Payment {
   toIsPremium?: boolean
 }
 
+interface PersonPendingSummary {
+  personUserId: string
+  name: string
+  avatarKey?: string
+  isPremium?: boolean
+  totalAmount: number
+  items: Payment[]
+}
+
 function buildChargeMessage(groupName: string, amount: number, pixCode?: string): string {
   const amountText = amount.toFixed(2).replace('.', ',')
   const pixBlock = pixCode?.trim() ? `\n\nPIX copia e cola:\n${pixCode.trim()}` : ''
@@ -69,10 +79,12 @@ export default function Payments() {
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const [savingId, setSavingId] = useState<string | null>(null)
   const [myId, setMyId] = useState<string | null>(null)
-  const [selfPaidTotal, setSelfPaidTotal] = useState(0)
   const [showMyBalance, setShowMyBalance] = useState(true)
   const [chargeTarget, setChargeTarget] = useState<Payment | null>(null)
   const [pixCopyPaste, setPixCopyPaste] = useState('')
+
+  const toCents = (value: number) => Math.round((Number(value) || 0) * 100)
+  const fromCents = (cents: number) => Number((cents / 100).toFixed(2))
 
   const load = useCallback(async (showBlockingLoading: boolean = false) => {
     if (showBlockingLoading || !hasLoadedOnceRef.current) {
@@ -122,9 +134,14 @@ export default function Payments() {
       if (payError) console.error('payments.payments-load-error', payError)
 
       const groups = (groupsData || []) as GroupRow[]
+      const allowedGroupIds = new Set(groups.map((g) => g.id))
       const membersByGroup = await fetchGroupMembersMap(groups.map((group) => group.id), currentUserId)
-      const txRows = ((txData as TransactionRow[] | null) || []).map((tx) => ({ ...tx, value: Number(tx.value) || 0 }))
-      const payRows = ((payData as PaymentRow[] | null) || []).map((p) => ({ ...p, amount: Number(p.amount) || 0 }))
+      const txRows = ((txData as TransactionRow[] | null) || [])
+        .filter((tx) => allowedGroupIds.has(String(tx.group_id || '')))
+        .map((tx) => ({ ...tx, value: Number(tx.value) || 0 }))
+      const payRows = ((payData as PaymentRow[] | null) || [])
+        .filter((p) => allowedGroupIds.has(String(p.group_id || '')))
+        .map((p) => ({ ...p, amount: Number(p.amount) || 0 }))
 
     const groupMap = new Map<string, GroupRow>()
     groups.forEach((g) => groupMap.set(g.id, g))
@@ -147,83 +164,71 @@ export default function Payments() {
       return Boolean(found?.isPremium)
     }
 
-    const pendingByKey = new Map<string, { groupId: string; from: string; to: string; amount: number; date: string; description: string; groupName: string }>()
-    let computedSelfPaid = 0
-
-    for (const tx of txRows) {
-      if (String(tx.status || '').toLowerCase() === 'paid') continue
-
-      const groupName = groupMap.get(tx.group_id)?.name || 'Grupo'
-      const participants = (membersByGroup.get(tx.group_id) || []).map((member) => member.id)
-
-      if (!participants.includes(currentUserId)) continue
-
-      const myShare = participants.length > 0 ? tx.value / participants.length : 0
-      if (myShare > 0) computedSelfPaid += myShare
-
-      if (tx.payer_id === currentUserId) {
-        for (const debtorId of participants.filter((pid) => pid !== currentUserId)) {
-          const amount = participants.length > 0 ? tx.value / participants.length : 0
-          if (amount <= 0) continue
-          const key = `${tx.group_id}|${debtorId}|${currentUserId}`
-          const prev = pendingByKey.get(key)
-          pendingByKey.set(key, {
-            groupId: tx.group_id,
-            from: debtorId,
-            to: currentUserId,
-            amount: (prev?.amount || 0) + amount,
-            date: tx.created_at || new Date().toISOString(),
-            description: tx.description || 'Acerto de gasto',
-            groupName,
-          })
-        }
-      } else {
-        const amount = participants.length > 0 ? tx.value / participants.length : 0
-        if (amount <= 0) continue
-        const key = `${tx.group_id}|${currentUserId}|${tx.payer_id}`
-        const prev = pendingByKey.get(key)
-        pendingByKey.set(key, {
-          groupId: tx.group_id,
-          from: currentUserId,
-          to: tx.payer_id,
-          amount: (prev?.amount || 0) + amount,
-          date: tx.created_at || new Date().toISOString(),
-          description: tx.description || 'Acerto de gasto',
-          groupName,
-        })
-      }
+    const membersIdByGroup = new Map<string, string[]>()
+    for (const group of groups) {
+      membersIdByGroup.set(
+        group.id,
+        (membersByGroup.get(group.id) || []).map((m) => m.id).filter(Boolean)
+      )
     }
 
-    const paidByKey = new Map<string, number>()
-    for (const p of payRows) {
-      const key = `${p.group_id}|${p.from_user}|${p.to_user}`
-      paidByKey.set(key, (paidByKey.get(key) || 0) + p.amount)
+    const pendingEdges = computePendingEdges(
+      txRows.map((tx) => ({
+        id: tx.id,
+        group_id: tx.group_id,
+        payer_id: tx.payer_id,
+        value: tx.value,
+        description: tx.description,
+        status: tx.status,
+        created_at: tx.created_at,
+        participants: Array.isArray(tx.participants) ? tx.participants : undefined,
+        splits: tx.splits,
+      })),
+      payRows.map((p) => ({
+        group_id: p.group_id,
+        from_user: p.from_user,
+        to_user: p.to_user,
+        amount: p.amount,
+        created_at: p.created_at,
+      })),
+      membersIdByGroup
+    )
+
+    const pendingByPair = new Map<string, { groupId: string; fromUserId: string; toUserId: string; amountCents: number; date: string; description: string }>()
+    for (const edge of pendingEdges) {
+      if (edge.fromUserId !== currentUserId && edge.toUserId !== currentUserId) continue
+      const key = `${edge.groupId}|${edge.fromUserId}|${edge.toUserId}`
+      const prev = pendingByPair.get(key)
+      pendingByPair.set(key, {
+        groupId: edge.groupId,
+        fromUserId: edge.fromUserId,
+        toUserId: edge.toUserId,
+        amountCents: (prev?.amountCents || 0) + toCents(edge.amount),
+        date: edge.date,
+        description: edge.description,
+      })
     }
 
-    const pendingFromTransactions: Payment[] = []
-    for (const [key, item] of pendingByKey.entries()) {
-      const paid = paidByKey.get(key) || 0
-      const outstanding = Math.max(0, item.amount - paid)
-      if (outstanding <= 0.009) continue
-
-      pendingFromTransactions.push({
+    const pendingFromTransactions: Payment[] = Array.from(pendingByPair.entries()).map(([key, item]) => {
+      const groupName = groupMap.get(item.groupId)?.name || 'Grupo'
+      return {
         id: `pending_${key}`,
         description: item.description,
-        amount: Number(outstanding.toFixed(2)),
-        from: item.from === currentUserId ? 'Voce' : nameFromGroup(item.groupId, item.from),
-        to: item.to === currentUserId ? 'Voce' : nameFromGroup(item.groupId, item.to),
-        fromUserId: item.from,
-        toUserId: item.to,
+        amount: fromCents(item.amountCents),
+        from: item.fromUserId === currentUserId ? 'Voce' : nameFromGroup(item.groupId, item.fromUserId),
+        to: item.toUserId === currentUserId ? 'Voce' : nameFromGroup(item.groupId, item.toUserId),
+        fromUserId: item.fromUserId,
+        toUserId: item.toUserId,
         groupId: item.groupId,
         status: 'pending',
         date: item.date,
-        groupName: item.groupName,
-        fromAvatarKey: avatarKeyFromGroup(item.groupId, item.from),
-        toAvatarKey: avatarKeyFromGroup(item.groupId, item.to),
-        fromIsPremium: isPremiumFromGroup(item.groupId, item.from),
-        toIsPremium: isPremiumFromGroup(item.groupId, item.to),
-      })
-    }
+        groupName,
+        fromAvatarKey: avatarKeyFromGroup(item.groupId, item.fromUserId),
+        toAvatarKey: avatarKeyFromGroup(item.groupId, item.toUserId),
+        fromIsPremium: isPremiumFromGroup(item.groupId, item.fromUserId),
+        toIsPremium: isPremiumFromGroup(item.groupId, item.toUserId),
+      }
+    })
 
     const paidFromPayments: Payment[] = payRows
       .filter((p) => p.from_user === currentUserId || p.to_user === currentUserId)
@@ -250,7 +255,6 @@ export default function Payments() {
       )
 
       setPayments(merged)
-      setSelfPaidTotal(Number(computedSelfPaid.toFixed(2)))
     } catch (error) {
       console.error('payments.load-unhandled-error', error)
       setPayments([])
@@ -284,37 +288,6 @@ export default function Payments() {
     }
   }, [load])
 
-  const handleMarkAsReceived = async (payment: Payment) => {
-    if (!myId || payment.status !== 'pending' || myId !== payment.toUserId) return
-
-    setSavingId(payment.id)
-    try {
-      const { error } = await supabase.from('payments').insert({
-        group_id: payment.groupId,
-        from_user: payment.fromUserId,
-        to_user: payment.toUserId,
-        amount: payment.amount,
-      })
-
-      if (error) {
-        console.error('payments.mark-received-error', {
-          code: error.code,
-          message: error.message,
-          details: error.details,
-          hint: error.hint,
-          payment,
-        })
-        setFeedback({ type: 'error', text: 'Erro ao marcar como recebido.' })
-        return
-      }
-
-      setFeedback({ type: 'success', text: 'Pagamento marcado como recebido.' })
-      await load(false)
-    } finally {
-      setSavingId(null)
-    }
-  }
-
   const copyChargeMessage = async (payment: Payment) => {
     await navigator.clipboard.writeText(buildChargeMessage(payment.groupName, payment.amount, pixCopyPaste))
     setFeedback({ type: 'success', text: 'Mensagem copiada.' })
@@ -338,19 +311,53 @@ export default function Payments() {
     return payments.filter((payment) => (filter === 'all' ? true : payment.status === filter))
   }, [payments, filter])
 
-  const pendingGrouped = useMemo(() => {
-    const grouped = new Map<string, { groupName: string; items: Payment[] }>()
-    for (const item of filteredPayments.filter((p) => p.status === 'pending')) {
-      const current = grouped.get(item.groupId)
-      if (current) current.items.push(item)
-      else grouped.set(item.groupId, { groupName: item.groupName, items: [item] })
+  const pendingPayments = useMemo(() => filteredPayments.filter((p) => p.status === 'pending'), [filteredPayments])
+
+  const receivableByPerson = useMemo(() => {
+    if (!myId) return [] as PersonPendingSummary[]
+    const grouped = new Map<string, PersonPendingSummary>()
+    for (const item of pendingPayments) {
+      if (item.toUserId !== myId) continue
+      const current = grouped.get(item.fromUserId)
+      if (current) {
+        current.totalAmount = fromCents(toCents(current.totalAmount) + toCents(item.amount))
+        current.items.push(item)
+      } else {
+        grouped.set(item.fromUserId, {
+          personUserId: item.fromUserId,
+          name: item.from,
+          avatarKey: item.fromAvatarKey,
+          isPremium: item.fromIsPremium,
+          totalAmount: item.amount,
+          items: [item],
+        })
+      }
     }
-    return Array.from(grouped.entries()).map(([groupId, value]) => ({
-      groupId,
-      groupName: value.groupName,
-      items: value.items.sort((a, b) => b.amount - a.amount),
-    }))
-  }, [filteredPayments])
+    return Array.from(grouped.values()).sort((a, b) => b.totalAmount - a.totalAmount)
+  }, [pendingPayments, myId])
+
+  const payableByPerson = useMemo(() => {
+    if (!myId) return [] as PersonPendingSummary[]
+    const grouped = new Map<string, PersonPendingSummary>()
+    for (const item of pendingPayments) {
+      if (item.fromUserId !== myId) continue
+      const current = grouped.get(item.toUserId)
+      if (current) {
+        current.totalAmount = fromCents(toCents(current.totalAmount) + toCents(item.amount))
+        current.items.push(item)
+      } else {
+        grouped.set(item.toUserId, {
+          personUserId: item.toUserId,
+          name: item.to,
+          avatarKey: item.toAvatarKey,
+          isPremium: item.toIsPremium,
+          totalAmount: item.amount,
+          items: [item],
+        })
+      }
+    }
+    return Array.from(grouped.values()).sort((a, b) => b.totalAmount - a.totalAmount)
+  }, [pendingPayments, myId])
 
   const paidList = useMemo(() => {
     return filteredPayments
@@ -358,17 +365,81 @@ export default function Payments() {
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
   }, [filteredPayments])
 
-  const totalPaid = payments
-    .filter((p) => p.status === 'paid' && p.from === 'Voce')
-    .reduce((acc, p) => acc + p.amount, 0) + selfPaidTotal
+  const totalToReceive = fromCents(
+    payments
+      .filter((p) => p.status === 'pending' && p.toUserId === myId)
+      .reduce((acc, p) => acc + toCents(p.amount), 0)
+  )
 
-  const totalReceived = payments
-    .filter((p) => p.status === 'paid' && p.to === 'Voce' && p.from !== 'Voce')
-    .reduce((acc, p) => acc + p.amount, 0)
+  const totalToPay = fromCents(
+    payments
+      .filter((p) => p.status === 'pending' && p.fromUserId === myId)
+      .reduce((acc, p) => acc + toCents(p.amount), 0)
+  )
 
-  const totalPending = payments
-    .filter((p) => p.status === 'pending')
-    .reduce((acc, p) => acc + p.amount, 0)
+  const peopleBalance = useMemo(() => {
+    const map = new Map<string, { name: string; avatarKey?: string; isPremium?: boolean; amountCents: number }>()
+
+    for (const p of payments) {
+      if (p.status !== 'pending' || !myId) continue
+
+      if (p.toUserId === myId) {
+        const key = p.fromUserId
+        const prev = map.get(key)
+        map.set(key, {
+          name: p.from,
+          avatarKey: p.fromAvatarKey,
+          isPremium: p.fromIsPremium,
+          amountCents: (prev?.amountCents || 0) + toCents(p.amount),
+        })
+      } else if (p.fromUserId === myId) {
+        const key = p.toUserId
+        const prev = map.get(key)
+        map.set(key, {
+          name: p.to,
+          avatarKey: p.toAvatarKey,
+          isPremium: p.toIsPremium,
+          amountCents: (prev?.amountCents || 0) - toCents(p.amount),
+        })
+      }
+    }
+
+    return Array.from(map.entries())
+      .map(([userId, value]) => ({ userId, ...value, amount: fromCents(value.amountCents) }))
+      .filter((item) => toCents(item.amount) !== 0)
+      .sort((a, b) => Math.abs(toCents(b.amount)) - Math.abs(toCents(a.amount)))
+  }, [payments, myId])
+
+  const handleMarkPersonAsPaid = async (summary: PersonPendingSummary) => {
+    if (!myId) return
+    const savingKey = `person_pay_${summary.personUserId}`
+    setSavingId(savingKey)
+    try {
+      for (const payment of summary.items) {
+        const { error } = await supabase.from('payments').insert({
+          group_id: payment.groupId,
+          from_user: payment.fromUserId,
+          to_user: payment.toUserId,
+          amount: payment.amount,
+        })
+        if (error) {
+          console.error('payments.mark-person-paid-error', {
+            code: error.code,
+            message: error.message,
+            details: error.details,
+            hint: error.hint,
+            payment,
+          })
+          setFeedback({ type: 'error', text: `Erro ao marcar como pago para ${summary.name}.` })
+          return
+        }
+      }
+      setFeedback({ type: 'success', text: `Pagamento marcado para ${summary.name}.` })
+      await load(false)
+    } finally {
+      setSavingId(null)
+    }
+  }
 
   if (loading) {
     return (
@@ -399,22 +470,38 @@ export default function Payments() {
               {feedback.text}
             </div>
           )}
-          <div className="grid grid-cols-3 gap-3">
-            <div className="bg-green-50 rounded-xl p-4 text-center border border-green-100">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="bg-green-50 dark:bg-emerald-950/45 rounded-xl p-4 text-center border border-green-100 dark:border-emerald-800/70">
               <TrendingUp className="w-5 h-5 text-[#5BC5A7] mx-auto mb-2" />
-              <p className="text-xs text-gray-600 mb-1">Recebido</p>
-              <p className="text-lg font-bold text-[#5BC5A7]">{showMyBalance ? `R$ ${totalReceived.toFixed(2)}` : 'Oculto'}</p>
+              <p className="text-xs text-gray-600 dark:text-gray-300 mb-1">A Receber</p>
+              <p className="text-lg font-bold text-[#5BC5A7]">{showMyBalance ? `R$ ${totalToReceive.toFixed(2)}` : 'Oculto'}</p>
             </div>
-            <div className="bg-red-50 rounded-xl p-4 text-center border border-red-100">
+            <div className="bg-red-50 dark:bg-rose-950/45 rounded-xl p-4 text-center border border-red-100 dark:border-rose-800/70">
               <TrendingDown className="w-5 h-5 text-[#FF6B6B] mx-auto mb-2" />
-              <p className="text-xs text-gray-600 mb-1">Pago</p>
-              <p className="text-lg font-bold text-[#FF6B6B]">{showMyBalance ? `R$ ${totalPaid.toFixed(2)}` : 'Oculto'}</p>
+              <p className="text-xs text-gray-600 dark:text-gray-300 mb-1">A Pagar</p>
+              <p className="text-lg font-bold text-[#FF6B6B]">{showMyBalance ? `R$ ${totalToPay.toFixed(2)}` : 'Oculto'}</p>
             </div>
-            <div className="bg-orange-50 rounded-xl p-4 text-center border border-orange-100">
-              <Clock className="w-5 h-5 text-orange-500 mx-auto mb-2" />
-              <p className="text-xs text-gray-600 mb-1">Pendente</p>
-              <p className="text-lg font-bold text-orange-500">{showMyBalance ? `R$ ${totalPending.toFixed(2)}` : 'Oculto'}</p>
-            </div>
+          </div>
+
+          <div className="mt-4 surface-card p-4">
+            <h2 className="text-sm font-semibold text-gray-800 mb-3">Balanço por pessoa</h2>
+            {peopleBalance.length === 0 ? (
+              <p className="text-sm text-gray-600">Nenhum saldo pendente por pessoa.</p>
+            ) : (
+              <div className="space-y-2">
+                {peopleBalance.map((person) => (
+                  <div key={person.userId} className="flex items-center justify-between p-2 rounded-lg bg-gray-50 border border-gray-200">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <UserAvatar name={person.name} avatarKey={person.avatarKey} isPremium={person.isPremium} className="w-8 h-8" textClassName="text-xs" />
+                      <p className="text-sm font-medium text-gray-800 truncate">{person.name}</p>
+                    </div>
+                    <p className={`text-sm font-semibold ${person.amount >= 0 ? 'text-[#5BC5A7]' : 'text-[#FF6B6B]'}`}>
+                      {showMyBalance ? `R$ ${Math.abs(person.amount).toFixed(2)} ${person.amount >= 0 ? 'te deve' : 'você deve'}` : 'Oculto'}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -440,53 +527,93 @@ export default function Payments() {
           </div>
         ) : (
           <div className="space-y-3">
-            {pendingGrouped.map((group) => (
-              <div key={group.groupId} className="surface-card p-4 surface-card-hover">
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-base font-semibold text-gray-800">{group.groupName}</h3>
-                  <span className="text-xs px-2 py-1 rounded-full bg-orange-50 text-orange-500">Pendentes</span>
-                </div>
-                <div className="space-y-2">
-                  {group.items.map((payment) => {
-                    const canMarkAsReceived = myId === payment.toUserId
-                    return (
-                      <div key={payment.id} className="p-3 rounded-lg border border-gray-200 bg-gray-50 transition-colors duration-200">
-                        <div className="flex items-center justify-between mb-2">
-                          <div className="flex items-center gap-2">
-                            <UserAvatar name={payment.from} avatarKey={payment.fromAvatarKey} isPremium={payment.fromIsPremium} className="w-7 h-7" textClassName="text-[10px]" />
-                            <p className="text-sm font-medium text-gray-800">
-                              {payment.from} {'->'} {payment.to}
-                            </p>
+            {(filter === 'all' || filter === 'pending') && (
+              <>
+                <div className="surface-card p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-base font-semibold text-gray-800">A receber</h3>
+                    <span className="text-xs px-2 py-1 rounded-full bg-green-50 text-[#5BC5A7]">{receivableByPerson.length} pessoa(s)</span>
+                  </div>
+                  {receivableByPerson.length === 0 ? (
+                    <p className="text-sm text-gray-600">Nenhuma pessoa te devendo no momento.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {receivableByPerson.map((person) => (
+                        <div key={person.personUserId} className="p-3 rounded-lg border border-gray-200 bg-gray-50">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <UserAvatar name={person.name} avatarKey={person.avatarKey} isPremium={person.isPremium} className="w-8 h-8" textClassName="text-xs" />
+                              <p className="text-sm font-medium text-gray-800 truncate">{person.name}</p>
+                            </div>
+                            <p className="text-sm font-semibold text-[#5BC5A7]">{showMyBalance ? `R$ ${person.totalAmount.toFixed(2)}` : 'Oculto'}</p>
                           </div>
-                          <p className="text-sm font-semibold text-gray-800">{showMyBalance ? `R$ ${payment.amount.toFixed(2)}` : 'Oculto'}</p>
-                        </div>
-                        <div className="grid grid-cols-2 gap-2">
-                          <button
-                            onClick={() => handleMarkAsReceived(payment)}
-                            disabled={!canMarkAsReceived || savingId === payment.id}
-                            className={`tap-target pressable py-2 bg-[#5BC5A7] text-white rounded-lg font-medium hover:bg-[#4AB396] disabled:opacity-60 disabled:cursor-not-allowed ${savingId === payment.id ? 'animate-pulse' : ''}`}
-                            type="button"
-                            title={canMarkAsReceived ? 'Marcar como recebido' : 'Somente quem recebeu o pagamento pode confirmar'}
-                          >
-                            {savingId === payment.id ? 'Salvando...' : 'Marcar como recebido'}
-                          </button>
                           <button
                             onClick={() => {
-                              setChargeTarget(payment)
+                              const synthetic: Payment = {
+                                id: `charge_person_${person.personUserId}`,
+                                description: 'Cobrança consolidada',
+                                amount: person.totalAmount,
+                                from: person.name,
+                                to: 'Voce',
+                                fromUserId: person.personUserId,
+                                toUserId: myId || '',
+                                groupId: person.items[0]?.groupId || '',
+                                status: 'pending',
+                                date: person.items[0]?.date || new Date().toISOString(),
+                                groupName: person.items.length === 1 ? person.items[0].groupName : 'Consolidado',
+                                fromAvatarKey: person.avatarKey,
+                                fromIsPremium: person.isPremium,
+                              }
+                              setChargeTarget(synthetic)
                               setPixCopyPaste('')
                             }}
-                            className="tap-target pressable py-2 border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-100"
+                            className="mt-2 w-full tap-target pressable py-2 border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-100"
                             type="button"
                           >
                             Cobrar
                           </button>
                         </div>
-                      </div>
-                    )
-                  })}
+                      ))}
+                    </div>
+                  )}
                 </div>
-              </div>
-            ))}
+
+                <div className="surface-card p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-base font-semibold text-gray-800">A pagar</h3>
+                    <span className="text-xs px-2 py-1 rounded-full bg-red-50 text-[#FF6B6B]">{payableByPerson.length} pessoa(s)</span>
+                  </div>
+                  {payableByPerson.length === 0 ? (
+                    <p className="text-sm text-gray-600">Nenhuma dívida sua pendente no momento.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {payableByPerson.map((person) => {
+                        const savingKey = `person_pay_${person.personUserId}`
+                        return (
+                          <div key={person.personUserId} className="p-3 rounded-lg border border-gray-200 bg-gray-50">
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <UserAvatar name={person.name} avatarKey={person.avatarKey} isPremium={person.isPremium} className="w-8 h-8" textClassName="text-xs" />
+                                <p className="text-sm font-medium text-gray-800 truncate">{person.name}</p>
+                              </div>
+                              <p className="text-sm font-semibold text-[#FF6B6B]">{showMyBalance ? `R$ ${person.totalAmount.toFixed(2)}` : 'Oculto'}</p>
+                            </div>
+                            <button
+                              onClick={() => handleMarkPersonAsPaid(person)}
+                              disabled={savingId === savingKey}
+                              className={`mt-2 w-full tap-target pressable py-2 bg-[#5BC5A7] text-white rounded-lg font-medium hover:bg-[#4AB396] disabled:opacity-60 ${savingId === savingKey ? 'animate-pulse' : ''}`}
+                              type="button"
+                            >
+                              {savingId === savingKey ? 'Salvando...' : 'Marcar como pago'}
+                            </button>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
 
             {paidList.map((payment) => (
               <div key={payment.id} className="surface-card p-4 surface-card-hover">

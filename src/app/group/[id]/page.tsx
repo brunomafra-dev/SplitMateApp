@@ -1,6 +1,6 @@
 'use client'
 
-import { ArrowLeft, Plus, TrendingUp, TrendingDown, Settings, UserPlus, Copy, X } from 'lucide-react'
+import { ArrowLeft, Plus, TrendingUp, TrendingDown, Settings, UserPlus, Copy, X, ChevronRight, ChevronDown } from 'lucide-react'
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -97,6 +97,7 @@ export default function GroupPage() {
   const [isPremiumUser, setIsPremiumUser] = useState(false)
   const [report, setReport] = useState<GroupReport | null>(null)
   const [reportFeedback, setReportFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+  const [isReportExpanded, setIsReportExpanded] = useState(false)
   const isMountedRef = useRef(true)
 
   const loadGroup = useCallback(async () => {
@@ -905,67 +906,76 @@ export default function GroupPage() {
 
       <div className="bg-white border-b border-gray-200">
         <div className="max-w-4xl mx-auto px-4 py-4">
-          {isPremiumUser && report ? (
-            <div className="surface-card p-4 space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="section-title">Resumo financeiro inteligente</h3>
-                  <p className="section-subtitle">Consolidado por participante com saldo pendente do grupo.</p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button onClick={handleExportCsv} type="button" className="tap-target pressable px-3 py-2 text-sm border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-100">CSV</button>
-                  <button onClick={handleExportPdf} type="button" className="tap-target pressable px-3 py-2 text-sm bg-gray-800 text-white rounded-lg">PDF</button>
-                </div>
-              </div>
+          <div className="surface-card p-4">
+            <button
+              type="button"
+              onClick={() => setIsReportExpanded((prev) => !prev)}
+              className="w-full flex items-center justify-between text-left tap-target pressable"
+            >
+              <h3 className="section-title">Resumo financeiro</h3>
+              {isReportExpanded ? <ChevronDown className="w-5 h-5 text-gray-600" /> : <ChevronRight className="w-5 h-5 text-gray-600" />}
+            </button>
 
-              {reportFeedback && (
-                <div className={`rounded-lg px-3 py-2 text-sm ${reportFeedback.type === 'success' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
-                  {reportFeedback.text}
-                </div>
-              )}
-
-              <div className="grid grid-cols-3 gap-2 text-sm">
-                <div className="rounded-lg bg-gray-50 p-3 border border-gray-200"><p className="text-gray-500">Total gasto</p><p className="font-semibold text-gray-800">R$ {report.totalSpent.toFixed(2)}</p></div>
-                <div className="rounded-lg bg-gray-50 p-3 border border-gray-200"><p className="text-gray-500">Total recebido</p><p className="font-semibold text-[#5BC5A7]">R$ {report.totalSettled.toFixed(2)}</p></div>
-                <div className="rounded-lg bg-gray-50 p-3 border border-gray-200"><p className="text-gray-500">Saldo pendente</p><p className="font-semibold text-orange-600">R$ {report.totalPending.toFixed(2)}</p></div>
-              </div>
-
-              <div className="space-y-2">
-                {report.participants.map((row) => {
-                  const scaleBase = Math.max(...report.participants.map((x) => Math.abs(x.netPending)), 1)
-                  const widthPercent = Math.max(8, Math.min(100, (Math.abs(row.netPending) / scaleBase) * 100))
-                  const isPositive = row.netPending >= 0
-                  return (
-                    <div key={row.userId} className="rounded-lg border border-gray-200 p-3">
-                      <div className="flex items-center justify-between text-sm mb-2">
-                        <span className="font-medium text-gray-800">{row.name}</span>
-                        <span className={isPositive ? 'text-[#5BC5A7] font-semibold' : 'text-[#FF6B6B] font-semibold'}>
-                          {isPositive ? '+' : '-'} R$ {Math.abs(row.netPending).toFixed(2)}
-                        </span>
-                      </div>
-                      <div className="h-2 w-full rounded-full bg-gray-100 overflow-hidden mb-2">
-                        <div
-                          className={`h-2 rounded-full ${isPositive ? 'bg-[#5BC5A7]' : 'bg-[#FF6B6B]'}`}
-                          style={{ width: `${widthPercent}%` }}
-                        />
-                      </div>
-                      <div className="grid grid-cols-2 gap-2 text-xs text-gray-600">
-                        <span>Pago: R$ {row.totalPaid.toFixed(2)}</span>
-                        <span>Parte: R$ {row.totalShare.toFixed(2)}</span>
-                        <span>A receber: R$ {row.pendingToReceive.toFixed(2)}</span>
-                        <span>A pagar: R$ {row.pendingToPay.toFixed(2)}</span>
+            {isReportExpanded && (
+              <div className="mt-4 space-y-4">
+                {isPremiumUser && report ? (
+                  <>
+                    <div className="flex items-center justify-between">
+                      <p className="section-subtitle">Consolidado por participante com saldo pendente do grupo.</p>
+                      <div className="flex items-center gap-2">
+                        <button onClick={handleExportCsv} type="button" className="tap-target pressable px-3 py-2 text-sm border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-100">CSV</button>
+                        <button onClick={handleExportPdf} type="button" className="tap-target pressable px-3 py-2 text-sm bg-gray-800 text-white rounded-lg">PDF</button>
                       </div>
                     </div>
-                  )
-                })}
+
+                    {reportFeedback && (
+                      <div className={`rounded-lg px-3 py-2 text-sm ${reportFeedback.type === 'success' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+                        {reportFeedback.text}
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-3 gap-2 text-sm">
+                      <div className="rounded-lg bg-gray-50 p-3 border border-gray-200"><p className="text-gray-500">Total gasto</p><p className="font-semibold text-gray-800">R$ {report.totalSpent.toFixed(2)}</p></div>
+                      <div className="rounded-lg bg-gray-50 p-3 border border-gray-200"><p className="text-gray-500">Total recebido</p><p className="font-semibold text-[#5BC5A7]">R$ {report.totalSettled.toFixed(2)}</p></div>
+                      <div className="rounded-lg bg-gray-50 p-3 border border-gray-200"><p className="text-gray-500">Saldo pendente</p><p className="font-semibold text-orange-600">R$ {report.totalPending.toFixed(2)}</p></div>
+                    </div>
+
+                    <div className="space-y-2">
+                      {report.participants.map((row) => {
+                        const scaleBase = Math.max(...report.participants.map((x) => Math.abs(x.netPending)), 1)
+                        const widthPercent = Math.max(8, Math.min(100, (Math.abs(row.netPending) / scaleBase) * 100))
+                        const isPositive = row.netPending >= 0
+                        return (
+                          <div key={row.userId} className="rounded-lg border border-gray-200 p-3">
+                            <div className="flex items-center justify-between text-sm mb-2">
+                              <span className="font-medium text-gray-800">{row.name}</span>
+                              <span className={isPositive ? 'text-[#5BC5A7] font-semibold' : 'text-[#FF6B6B] font-semibold'}>
+                                {isPositive ? '+' : '-'} R$ {Math.abs(row.netPending).toFixed(2)}
+                              </span>
+                            </div>
+                            <div className="h-2 w-full rounded-full bg-gray-100 overflow-hidden mb-2">
+                              <div
+                                className={`h-2 rounded-full ${isPositive ? 'bg-[#5BC5A7]' : 'bg-[#FF6B6B]'}`}
+                                style={{ width: `${widthPercent}%` }}
+                              />
+                            </div>
+                            <div className="grid grid-cols-2 gap-2 text-xs text-gray-600">
+                              <span>Pago: R$ {row.totalPaid.toFixed(2)}</span>
+                              <span>Parte: R$ {row.totalShare.toFixed(2)}</span>
+                              <span>A receber: R$ {row.pendingToReceive.toFixed(2)}</span>
+                              <span>A pagar: R$ {row.pendingToPay.toFixed(2)}</span>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </>
+                ) : (
+                  <p className="section-subtitle">Disponivel no plano Premium com exportacao CSV/PDF e consolidado por participante.</p>
+                )}
               </div>
-            </div>
-          ) : (
-            <div className="surface-card p-4">
-              <h3 className="section-title">Resumo financeiro inteligente</h3>
-              <p className="section-subtitle mt-1">Disponivel no plano Premium com exportacao CSV/PDF e consolidado por participante.</p>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </div>
 

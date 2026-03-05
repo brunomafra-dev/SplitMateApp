@@ -9,6 +9,7 @@ import BottomNav from '@/components/ui/bottom-nav'
 import type { BalancePayment, BalanceTransaction } from '@/lib/balance'
 import { fetchGroupMembersMap, type GroupMember } from '@/lib/group-members'
 import UserAvatar from '@/components/user-avatar'
+import { computePendingEdges } from '@/lib/pending-balances'
 
 interface Member {
   id: string
@@ -48,6 +49,11 @@ export default function Home() {
   const [myAvatarKey, setMyAvatarKey] = useState('')
   const [myDisplayName, setMyDisplayName] = useState('Perfil')
   const [myIsPremium, setMyIsPremium] = useState(false)
+  const [totalToReceive, setTotalToReceive] = useState(0)
+  const [totalToPay, setTotalToPay] = useState(0)
+
+  const toCents = (value: number) => Math.round((Number(value) || 0) * 100)
+  const fromCents = (cents: number) => Number((cents / 100).toFixed(2))
 
   const renderMemberAvatars = (members?: Member[], maxDisplay: number = 4) => {
     if (!members || members.length === 0) return null
@@ -113,12 +119,9 @@ export default function Home() {
           return
         }
 
-      const txMinimal = await supabase
-        .from('transactions')
-        .select('id,group_id,value,payer_id')
-
-      const txRows = txMinimal.data
-      const tErr = txMinimal.error
+      const txAttempt = await supabase.from('transactions').select('*')
+      const txRows = (txAttempt.data as any[] | null) ?? []
+      const tErr = txAttempt.error
 
       if (tErr) {
         console.error('Erro ao carregar transactions:', {
@@ -131,7 +134,7 @@ export default function Home() {
 
       const { data: payRows, error: pErr } = await supabase
         .from('payments')
-        .select('group_id,from_user,to_user,amount')
+        .select('group_id,from_user,to_user,amount,created_at')
 
       if (pErr) {
         console.error('Erro ao carregar payments:', pErr.message)
@@ -160,76 +163,78 @@ export default function Home() {
         setMyIsPremium(Boolean(myProfile?.is_premium))
 
         const safeGroups: GroupRow[] = (groupRows as any) || []
+        const allowedGroupIds = new Set(safeGroups.map((g) => g.id))
         const membersByGroup = await fetchGroupMembersMap(safeGroups.map((group) => group.id), myId)
 
-        const safeTx: TransactionRow[] = ((txRows as any) || []).map((t: any) => ({
+        const safeTx: TransactionRow[] = ((txRows as any) || [])
+          .filter((t: any) => allowedGroupIds.has(String(t.group_id || '')))
+          .map((t: any) => ({
           ...t,
           value: Number(t.value) || 0,
         }))
 
-        const safePayments: PaymentRow[] = ((payRows as any) || []).map((p: any) => ({
+        const safePayments: PaymentRow[] = ((payRows as any) || [])
+          .filter((p: any) => allowedGroupIds.has(String(p.group_id || '')))
+          .map((p: any) => ({
           ...p,
           amount: Number(p.amount) || 0,
         }))
 
-        let global = 0
+        const membersIdByGroup = new Map<string, string[]>()
+        for (const g of safeGroups) {
+          membersIdByGroup.set(
+            g.id,
+            ((membersByGroup.get(g.id) || []) as GroupMember[]).map((m) => m.id).filter(Boolean)
+          )
+        }
+
+        const pendingEdges = computePendingEdges(
+          safeTx.map((tx) => ({
+            id: tx.id,
+            group_id: tx.group_id,
+            payer_id: tx.payer_id,
+            value: Number(tx.value) || 0,
+            description: tx.description,
+            status: tx.status,
+            created_at: tx.created_at,
+            participants: Array.isArray(tx.participants) ? tx.participants : undefined,
+            splits: (tx as any).splits as Record<string, number> | undefined,
+          })),
+          safePayments.map((p) => ({
+            group_id: p.group_id,
+            from_user: p.from_user,
+            to_user: p.to_user,
+            amount: Number(p.amount) || 0,
+            created_at: (p as any).created_at as string | undefined,
+          })),
+          membersIdByGroup
+        )
+
+        let globalCents = 0
+        let receiveTotalCents = 0
+        let payTotalCents = 0
+        const balanceByGroupCents = new Map<string, number>()
+
+        for (const edge of pendingEdges) {
+          const edgeCents = toCents(edge.amount)
+          if (edge.toUserId === myId) {
+            balanceByGroupCents.set(edge.groupId, (balanceByGroupCents.get(edge.groupId) || 0) + edgeCents)
+            receiveTotalCents += edgeCents
+          } else if (edge.fromUserId === myId) {
+            balanceByGroupCents.set(edge.groupId, (balanceByGroupCents.get(edge.groupId) || 0) - edgeCents)
+            payTotalCents += edgeCents
+          }
+        }
 
         const uiGroups: GroupUI[] = safeGroups.map((g) => {
         const members = (membersByGroup.get(g.id) || []) as GroupMember[]
         const participantsCount = members.length
-        const currentParticipantIds = members.map((m) => m.id).filter(Boolean)
+        const groupTx = safeTx.filter((tx) => tx.group_id === g.id)
 
-        const groupTx = safeTx
-          .filter((tx) => tx.group_id === g.id)
-          .map((tx) => ({
-            ...tx,
-            participants: currentParticipantIds,
-          }))
-
-        const groupPayments = safePayments.filter((payment) => payment.group_id === g.id)
         const totalSpent = groupTx.reduce((acc, tx) => acc + (Number(tx.value) || 0), 0)
-
-        const pendingByKey = new Map<string, number>()
-        for (const tx of groupTx) {
-          if (String(tx.status || '').toLowerCase() === 'paid') continue
-          const txValue = Number(tx.value) || 0
-          if (txValue <= 0) continue
-          if (!currentParticipantIds.includes(myId)) continue
-          if (currentParticipantIds.length === 0) continue
-
-          const share = txValue / currentParticipantIds.length
-          if (share <= 0) continue
-
-          if (String(tx.payer_id) === String(myId)) {
-            for (const debtorId of currentParticipantIds.filter((pid) => String(pid) !== String(myId))) {
-              const key = `${g.id}|${debtorId}|${myId}`
-              pendingByKey.set(key, (pendingByKey.get(key) || 0) + share)
-            }
-          } else {
-            const key = `${g.id}|${myId}|${tx.payer_id}`
-            pendingByKey.set(key, (pendingByKey.get(key) || 0) + share)
-          }
-        }
-
-        const paidByKey = new Map<string, number>()
-        for (const p of groupPayments) {
-          const key = `${p.group_id}|${p.from_user}|${p.to_user}`
-          paidByKey.set(key, (paidByKey.get(key) || 0) + (Number(p.amount) || 0))
-        }
-
-        let pendingBalance = 0
-        for (const [key, amount] of pendingByKey.entries()) {
-          const paidAmount = paidByKey.get(key) || 0
-          const outstanding = Math.max(0, amount - paidAmount)
-          if (outstanding <= 0.009) continue
-
-          const [, fromUser, toUser] = key.split('|')
-          if (String(toUser) === String(myId)) pendingBalance += outstanding
-          else if (String(fromUser) === String(myId)) pendingBalance -= outstanding
-        }
-
-        const normalizedPending = Math.abs(pendingBalance) <= 0.009 ? 0 : Number(pendingBalance.toFixed(2))
-        global += normalizedPending
+        const pendingBalanceCents = balanceByGroupCents.get(g.id) || 0
+        const normalizedPending = pendingBalanceCents === 0 ? 0 : fromCents(pendingBalanceCents)
+        globalCents += pendingBalanceCents
 
         return {
           id: g.id,
@@ -241,13 +246,17 @@ export default function Home() {
         }
       })
 
-        const normalizedGlobal = Math.abs(global) <= 0.009 ? 0 : Number(global.toFixed(2))
+        const normalizedGlobal = globalCents === 0 ? 0 : fromCents(globalCents)
         setGroups(uiGroups)
         setTotalBalance(normalizedGlobal)
+        setTotalToReceive(fromCents(receiveTotalCents))
+        setTotalToPay(fromCents(payTotalCents))
       } catch (error) {
         console.error('home.load-unhandled-error', error)
         setGroups([])
         setTotalBalance(0)
+        setTotalToReceive(0)
+        setTotalToPay(0)
       } finally {
         hasLoadedOnceRef.current = true
         setLoading(false)
@@ -336,6 +345,16 @@ export default function Home() {
                   <span className="text-sm text-[#FF6B6B] bg-red-50 px-3 py-1 rounded-full">voce deve</span>
                 </>
               )}
+            </div>
+            <div className="mt-4 grid grid-cols-2 gap-3">
+              <div className="rounded-lg border border-green-100 dark:border-emerald-800/70 bg-green-50 dark:bg-emerald-950/45 p-3 text-center">
+                <p className="text-xs text-gray-600 dark:text-gray-300 mb-1">A Receber</p>
+                <p className="text-sm font-semibold text-[#5BC5A7]">{showMyBalance ? `R$ ${totalToReceive.toFixed(2)}` : 'Oculto'}</p>
+              </div>
+              <div className="rounded-lg border border-red-100 dark:border-rose-800/70 bg-red-50 dark:bg-rose-950/45 p-3 text-center">
+                <p className="text-xs text-gray-600 dark:text-gray-300 mb-1">A Pagar</p>
+                <p className="text-sm font-semibold text-[#FF6B6B]">{showMyBalance ? `R$ ${totalToPay.toFixed(2)}` : 'Oculto'}</p>
+              </div>
             </div>
           </div>
         </div>
