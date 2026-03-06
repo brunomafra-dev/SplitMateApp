@@ -1,3 +1,7 @@
+import { fromCents, toCents } from '@/lib/money'
+import { computePendingEdges } from '@/lib/pending-balances'
+import { normalizePersistedSplits } from '@/lib/transaction-splits'
+
 export interface BalanceTransaction {
   id: string
   group_id: string
@@ -6,6 +10,8 @@ export interface BalanceTransaction {
   participants?: string[] | null
   splits?: Record<string, number> | null
   status?: string | null
+  description?: string | null
+  created_at?: string | null
 }
 
 export interface BalancePayment {
@@ -13,6 +19,7 @@ export interface BalancePayment {
   from_user: string
   to_user: string
   amount: number
+  created_at?: string
 }
 
 export interface UserBalanceResult {
@@ -22,22 +29,8 @@ export interface UserBalanceResult {
   balance: number
 }
 
-const EPSILON = 0.009
-
 function isPaidStatus(status?: string | null) {
   return String(status || '').toLowerCase() === 'paid'
-}
-
-function getParticipants(tx: BalanceTransaction): string[] {
-  if (Array.isArray(tx.participants) && tx.participants.length > 0) {
-    return tx.participants
-  }
-
-  if (tx.splits && typeof tx.splits === 'object') {
-    return Object.keys(tx.splits)
-  }
-
-  return []
 }
 
 export function calculateUserBalance(
@@ -45,49 +38,64 @@ export function calculateUserBalance(
   currentUserId: string,
   payments: BalancePayment[] = []
 ): UserBalanceResult {
-  const totalSpent = expenses.reduce((acc, tx) => acc + (Number(tx.value) || 0), 0)
+  const totalSpent = Number(
+    expenses.reduce((acc, tx) => acc + (Number(tx.value) || 0), 0).toFixed(2)
+  )
 
-  let paidByMe = 0
-  let myShare = 0
+  let paidByMeCents = 0
+  let myShareCents = 0
 
-  for (const tx of expenses) {
-    const value = Number(tx.value) || 0
-    if (value <= 0 || isPaidStatus(tx.status)) continue
+  const normalizedExpenses = expenses.map((tx) => ({
+    ...tx,
+    value: Number(tx.value) || 0,
+    payer_id: String(tx.payer_id || ''),
+    status: String(tx.status || ''),
+    description: String(tx.description || ''),
+    created_at: tx.created_at || undefined,
+    splits: normalizePersistedSplits(Number(tx.value) || 0, tx.splits),
+  }))
+
+  for (const tx of normalizedExpenses) {
+    if (isPaidStatus(tx.status)) continue
 
     if (String(tx.payer_id) === String(currentUserId)) {
-      paidByMe += value
+      paidByMeCents += toCents(tx.value)
     }
 
-    const participants = getParticipants(tx)
-    if (!participants.includes(currentUserId)) continue
-
-    const splitValue = tx.splits?.[currentUserId]
-    if (typeof splitValue === 'number' && Number.isFinite(splitValue)) {
-      myShare += splitValue
-      continue
-    }
-
-    if (participants.length > 0) {
-      myShare += value / participants.length
-    }
+    myShareCents += toCents(Number(tx.splits?.[currentUserId] || 0))
   }
 
-  let balance = paidByMe - myShare
-  for (const payment of payments) {
-    const amount = Number(payment.amount) || 0
-    if (amount <= 0) continue
-    if (String(payment.from_user) === String(currentUserId)) balance -= amount
-    if (String(payment.to_user) === String(currentUserId)) balance += amount
-  }
+  const pendingEdges = computePendingEdges(
+    normalizedExpenses.map((tx) => ({
+      id: tx.id,
+      group_id: tx.group_id,
+      payer_id: tx.payer_id,
+      value: tx.value,
+      description: tx.description || '',
+      status: tx.status || '',
+      created_at: tx.created_at,
+      splits: tx.splits || undefined,
+    })),
+    payments.map((p) => ({
+      group_id: p.group_id,
+      from_user: p.from_user,
+      to_user: p.to_user,
+      amount: Number(p.amount) || 0,
+      created_at: p.created_at,
+    }))
+  )
 
-  if (Math.abs(balance) <= EPSILON) {
-    balance = 0
+  let balanceCents = 0
+  for (const edge of pendingEdges) {
+    const edgeCents = toCents(edge.amount)
+    if (String(edge.toUserId) === String(currentUserId)) balanceCents += edgeCents
+    if (String(edge.fromUserId) === String(currentUserId)) balanceCents -= edgeCents
   }
 
   return {
     totalSpent,
-    paidByMe: Number(paidByMe.toFixed(2)),
-    myShare: Number(myShare.toFixed(2)),
-    balance: Number(balance.toFixed(2)),
+    paidByMe: fromCents(paidByMeCents),
+    myShare: fromCents(myShareCents),
+    balance: fromCents(balanceCents),
   }
 }

@@ -6,10 +6,11 @@ import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import BottomNav from '@/components/ui/bottom-nav'
-import type { BalancePayment, BalanceTransaction } from '@/lib/balance'
 import { fetchGroupMembersMap, type GroupMember } from '@/lib/group-members'
 import UserAvatar from '@/components/user-avatar'
 import { computePendingEdges } from '@/lib/pending-balances'
+import { fromCents, toCents } from '@/lib/money'
+import { auditDatabaseSecurity, type SecurityAuditReport } from '@/lib/security-audit'
 
 interface Member {
   id: string
@@ -23,12 +24,30 @@ interface GroupRow {
   name: string
 }
 
-interface TransactionRow extends BalanceTransaction {
+interface TransactionRow {
+  id: string
+  group_id: string
+  value: number
+  payer_id: string
+  participants?: string[]
+  splits?: Record<string, number>
+  status?: string
+  description?: string
+  created_at?: string
+}
+
+interface PaymentRow {
+  group_id: string
+  from_user: string
+  to_user: string
+  amount: number
+  created_at?: string
+}
+
+interface LegacyTransactionRow extends TransactionRow {
   splits?: any
   status?: string
 }
-
-interface PaymentRow extends BalancePayment {}
 
 interface GroupUI {
   id: string
@@ -51,9 +70,9 @@ export default function Home() {
   const [myIsPremium, setMyIsPremium] = useState(false)
   const [totalToReceive, setTotalToReceive] = useState(0)
   const [totalToPay, setTotalToPay] = useState(0)
-
-  const toCents = (value: number) => Math.round((Number(value) || 0) * 100)
-  const fromCents = (cents: number) => Number((cents / 100).toFixed(2))
+  const [securityReport, setSecurityReport] = useState<SecurityAuditReport | null>(null)
+  const [showSecurityIssues, setShowSecurityIssues] = useState(false)
+  const securityAuditRanRef = useRef(false)
 
   const renderMemberAvatars = (members?: Member[], maxDisplay: number = 4) => {
     if (!members || members.length === 0) return null
@@ -103,6 +122,12 @@ export default function Home() {
         }
 
         const myId = session.user.id
+
+        if (!securityAuditRanRef.current) {
+          securityAuditRanRef.current = true
+          const report = await auditDatabaseSecurity(supabase)
+          setSecurityReport(report)
+        }
 
         try {
           localStorage.removeItem('divideai_groups')
@@ -166,7 +191,7 @@ export default function Home() {
         const allowedGroupIds = new Set(safeGroups.map((g) => g.id))
         const membersByGroup = await fetchGroupMembersMap(safeGroups.map((group) => group.id), myId)
 
-        const safeTx: TransactionRow[] = ((txRows as any) || [])
+        const safeTx: LegacyTransactionRow[] = ((txRows as any) || [])
           .filter((t: any) => allowedGroupIds.has(String(t.group_id || '')))
           .map((t: any) => ({
           ...t,
@@ -179,14 +204,6 @@ export default function Home() {
           ...p,
           amount: Number(p.amount) || 0,
         }))
-
-        const membersIdByGroup = new Map<string, string[]>()
-        for (const g of safeGroups) {
-          membersIdByGroup.set(
-            g.id,
-            ((membersByGroup.get(g.id) || []) as GroupMember[]).map((m) => m.id).filter(Boolean)
-          )
-        }
 
         const pendingEdges = computePendingEdges(
           safeTx.map((tx) => ({
@@ -206,8 +223,7 @@ export default function Home() {
             to_user: p.to_user,
             amount: Number(p.amount) || 0,
             created_at: (p as any).created_at as string | undefined,
-          })),
-          membersIdByGroup
+          }))
         )
 
         let globalCents = 0
@@ -367,6 +383,37 @@ export default function Home() {
           </div>
         </div>
       </div>
+
+      {securityReport && !securityReport.safe && (
+        <div className="bg-amber-50 border-b border-amber-200">
+          <div className="max-w-4xl mx-auto px-4 py-3">
+            <div className="rounded-lg border border-amber-200 bg-amber-100/70 p-3">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm text-amber-900">Atencao: problemas de seguranca detectados.</p>
+                <button
+                  type="button"
+                  onClick={() => setShowSecurityIssues((prev) => !prev)}
+                  className="tap-target pressable px-3 py-1.5 text-xs rounded-lg border border-amber-300 text-amber-900 hover:bg-amber-200/60"
+                >
+                  {showSecurityIssues ? 'Ocultar relatorio' : 'Ver relatorio de seguranca'}
+                </button>
+              </div>
+
+              {showSecurityIssues && (
+                <div className="mt-3 space-y-2">
+                  {securityReport.issues.map((issue, index) => (
+                    <div key={`${issue.type}-${issue.table || 'no-table'}-${index}`} className="rounded-md bg-white/80 border border-amber-200 px-3 py-2">
+                      <p className="text-xs font-semibold text-amber-900">{issue.type}</p>
+                      {issue.table && <p className="text-xs text-amber-800">Tabela: {issue.table}</p>}
+                      <p className="text-xs text-amber-800">{issue.message}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       <main className="flex-1 overflow-y-auto max-w-4xl w-full mx-auto px-4 py-6 pb-[calc(8rem+env(safe-area-inset-bottom))]">
         {groups.length === 0 ? (

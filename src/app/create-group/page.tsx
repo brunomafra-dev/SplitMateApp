@@ -13,14 +13,6 @@ import { fetchGroupQuota, type GroupQuota } from '@/lib/group-quota'
 
 type Category = 'apartment' | 'house' | 'trip' | 'other'
 
-interface Participant {
-  id: string
-  user_id?: string
-  display_name?: string
-  name: string
-  email?: string
-}
-
 const categories: Array<{ id: Category; label: string; icon: string }> = [
   { id: 'apartment', label: 'Apartamento', icon: '\u{1F3E2}' },
   { id: 'house', label: 'Casa', icon: '\u{1F3E0}' },
@@ -40,9 +32,9 @@ export default function CreateGroup() {
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const [quota, setQuota] = useState<GroupQuota | null>(null)
 
-  const withTimeout = async <T,>(promise: Promise<T>, timeoutMs: number, timeoutMessage: string) => {
+  const withTimeout = async <T,>(promise: PromiseLike<T>, timeoutMs: number, timeoutMessage: string): Promise<T> => {
     return await Promise.race([
-      promise,
+      Promise.resolve(promise),
       new Promise<never>((_, reject) => {
         const timer = setTimeout(() => {
           clearTimeout(timer)
@@ -95,19 +87,9 @@ export default function CreateGroup() {
         return
       }
 
-      let profileUsername = ''
       try {
-        const profile = await ensureProfileForUser(user)
-        profileUsername = profile.username
+        await ensureProfileForUser(user)
       } catch {}
-
-      const creatorParticipant: Participant = {
-        id: user.id,
-        user_id: user.id,
-        display_name: 'Voce',
-        name: profileUsername || 'Voce',
-        email: user.email ?? undefined,
-      }
 
       const { data, error } = await supabase
         .from('groups')
@@ -115,7 +97,6 @@ export default function CreateGroup() {
           name: trimmedGroupName,
           category,
           owner_id: user.id,
-          participants: [creatorParticipant],
         })
         .select('id')
         .single()
@@ -146,7 +127,7 @@ export default function CreateGroup() {
 
       if (generateInviteOnCreate) {
         const token = generateSecureInviteToken()
-        const { error: inviteError } = await withTimeout(
+        const inviteInsertResult = await withTimeout(
           supabase.from('invite_tokens').insert({
             group_id: data.id,
             created_by: user.id,
@@ -155,6 +136,7 @@ export default function CreateGroup() {
           10000,
           'create-group.invite-timeout'
         )
+        const inviteError = (inviteInsertResult as { error?: { code?: string; message?: string; details?: string | null; hint?: string | null } | null })?.error || null
 
         if (!inviteError) {
           setInviteLink(buildInviteLink(token))

@@ -1,3 +1,6 @@
+import { toCents, fromCents } from '@/lib/money'
+import { normalizePersistedSplits } from '@/lib/transaction-splits'
+
 export interface PendingTransactionLike {
   id: string
   group_id: string
@@ -33,18 +36,9 @@ function toMs(value?: string) {
   return Number.isFinite(t) ? t : 0
 }
 
-function toCents(value: number) {
-  return Math.round((Number(value) || 0) * 100)
-}
-
-function fromCents(cents: number) {
-  return Number((cents / 100).toFixed(2))
-}
-
 export function computePendingEdges(
   transactions: PendingTransactionLike[],
-  payments: PendingPaymentLike[],
-  membersByGroup: Map<string, string[]>
+  payments: PendingPaymentLike[]
 ) {
   const rawDebts: Array<PendingEdge & { remainingCents: number; amountCents: number; ms: number }> = []
 
@@ -54,43 +48,20 @@ export function computePendingEdges(
     const txValueCents = toCents(Number(tx.value) || 0)
     if (txValueCents <= 0) continue
 
-    const fallbackParticipants = membersByGroup.get(tx.group_id) || []
-    const explicitParticipants = Array.isArray(tx.participants)
-      ? tx.participants.map((id) => String(id || '').trim()).filter(Boolean)
-      : []
-
-    const participants = explicitParticipants.length > 0 ? explicitParticipants : fallbackParticipants
-    if (participants.length === 0) continue
-
     const payerId = String(tx.payer_id || '').trim()
     if (!payerId) continue
 
-    const splits = tx.splits && typeof tx.splits === 'object' ? tx.splits : null
-    const hasExplicitSplits = !!splits && Object.keys(splits).length > 0
-
-    const shareCentsByParticipant = new Map<string, number>()
-    if (hasExplicitSplits) {
-      for (const participantId of participants) {
-        const cents = toCents(Number((splits as Record<string, number>)[participantId] || 0))
-        shareCentsByParticipant.set(participantId, Math.max(0, cents))
-      }
-    } else {
-      const base = Math.floor(txValueCents / participants.length)
-      const remainder = txValueCents % participants.length
-      for (let i = 0; i < participants.length; i += 1) {
-        const participantId = participants[i]
-        const cents = base + (i < remainder ? 1 : 0)
-        shareCentsByParticipant.set(participantId, cents)
-      }
-    }
+    const normalizedSplits = normalizePersistedSplits(Number(tx.value) || 0, tx.splits)
+    const splitEntries = Object.entries(normalizedSplits)
+    if (splitEntries.length === 0) continue
 
     const dateIso = tx.created_at || new Date().toISOString()
     const ms = toMs(dateIso)
 
-    for (const participantId of participants) {
+    for (const [participantId, splitValue] of splitEntries) {
       if (participantId === payerId) continue
 
-      const debtAmountCents = Math.max(0, shareCentsByParticipant.get(participantId) || 0)
+      const debtAmountCents = Math.max(0, toCents(Number(splitValue) || 0))
       if (debtAmountCents <= 0) continue
 
       rawDebts.push({
@@ -108,7 +79,7 @@ export function computePendingEdges(
     }
   }
 
-  const debtsByPair = new Map<string, Array<PendingEdge & { remaining: number; ms: number }>>()
+  const debtsByPair = new Map<string, Array<PendingEdge & { remainingCents: number; ms: number }>>()
   for (const debt of rawDebts) {
     const key = `${debt.groupId}|${debt.fromUserId}|${debt.toUserId}`
     const list = debtsByPair.get(key) || []

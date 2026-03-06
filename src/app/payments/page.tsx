@@ -1,6 +1,6 @@
 ﻿'use client'
 
-import { ArrowLeft, CheckCircle, Clock, TrendingDown, TrendingUp } from 'lucide-react'
+import { ArrowLeft, CheckCircle, Clock, Copy, MessageCircle, TrendingDown, TrendingUp, X } from 'lucide-react'
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
@@ -9,6 +9,7 @@ import BottomNav from '@/components/ui/bottom-nav'
 import { fetchGroupMembersMap } from '@/lib/group-members'
 import UserAvatar from '@/components/user-avatar'
 import { computePendingEdges } from '@/lib/pending-balances'
+import { fromCents, toCents } from '@/lib/money'
 
 interface GroupRow {
   id: string
@@ -36,6 +37,14 @@ interface PaymentRow {
   created_at: string
 }
 
+interface DebtDetailItem {
+  txId: string
+  description: string
+  groupName: string
+  amount: number
+  date: string
+}
+
 interface Payment {
   id: string
   description: string
@@ -52,6 +61,7 @@ interface Payment {
   toAvatarKey?: string
   fromIsPremium?: boolean
   toIsPremium?: boolean
+  breakdown?: DebtDetailItem[]
 }
 
 interface PersonPendingSummary {
@@ -72,9 +82,11 @@ export default function Payments() {
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const [myId, setMyId] = useState<string | null>(null)
   const [showMyBalance, setShowMyBalance] = useState(true)
-
-  const toCents = (value: number) => Math.round((Number(value) || 0) * 100)
-  const fromCents = (cents: number) => Number((cents / 100).toFixed(2))
+  const [processingPaymentId, setProcessingPaymentId] = useState<string | null>(null)
+  const [myPixKey, setMyPixKey] = useState('')
+  const [chargeTarget, setChargeTarget] = useState<Payment | null>(null)
+  const [chargePixKey, setChargePixKey] = useState('')
+  const [detailTarget, setDetailTarget] = useState<Payment | null>(null)
 
   const load = useCallback(async (showBlockingLoading: boolean = false) => {
     if (showBlockingLoading || !hasLoadedOnceRef.current) {
@@ -98,6 +110,12 @@ export default function Payments() {
         .eq('id', currentUserId)
         .maybeSingle()
       setShowMyBalance(Boolean(myProfile?.privacy_show_balance ?? true))
+      const { data: myPaymentSettings } = await supabase
+        .from('user_payment_settings')
+        .select('pix_key')
+        .eq('user_id', currentUserId)
+        .maybeSingle()
+      setMyPixKey(String((myPaymentSettings as { pix_key?: string } | null)?.pix_key || ''))
 
       const { data: groupsData, error: groupsError } = await supabase
         .from('groups')
@@ -154,14 +172,6 @@ export default function Payments() {
       return Boolean(found?.isPremium)
     }
 
-    const membersIdByGroup = new Map<string, string[]>()
-    for (const group of groups) {
-      membersIdByGroup.set(
-        group.id,
-        (membersByGroup.get(group.id) || []).map((m) => m.id).filter(Boolean)
-      )
-    }
-
     const pendingEdges = computePendingEdges(
       txRows.map((tx) => ({
         id: tx.id,
@@ -180,15 +190,30 @@ export default function Payments() {
         to_user: p.to_user,
         amount: p.amount,
         created_at: p.created_at,
-      })),
-      membersIdByGroup
+      }))
     )
 
-    const pendingByPair = new Map<string, { groupId: string; fromUserId: string; toUserId: string; amountCents: number; date: string; description: string }>()
+    const pendingByPair = new Map<string, {
+      groupId: string
+      fromUserId: string
+      toUserId: string
+      amountCents: number
+      date: string
+      description: string
+      breakdown: DebtDetailItem[]
+    }>()
     for (const edge of pendingEdges) {
       if (edge.fromUserId !== currentUserId && edge.toUserId !== currentUserId) continue
       const key = `${edge.groupId}|${edge.fromUserId}|${edge.toUserId}`
       const prev = pendingByPair.get(key)
+      const groupName = groupMap.get(edge.groupId)?.name || 'Grupo'
+      const detailItem: DebtDetailItem = {
+        txId: edge.txId,
+        description: edge.description || 'Acerto de gasto',
+        groupName,
+        amount: fromCents(toCents(edge.amount)),
+        date: edge.date,
+      }
       pendingByPair.set(key, {
         groupId: edge.groupId,
         fromUserId: edge.fromUserId,
@@ -196,6 +221,7 @@ export default function Payments() {
         amountCents: (prev?.amountCents || 0) + toCents(edge.amount),
         date: edge.date,
         description: edge.description,
+        breakdown: [...(prev?.breakdown || []), detailItem],
       })
     }
 
@@ -217,6 +243,7 @@ export default function Payments() {
         toAvatarKey: avatarKeyFromGroup(item.groupId, item.toUserId),
         fromIsPremium: isPremiumFromGroup(item.groupId, item.fromUserId),
         toIsPremium: isPremiumFromGroup(item.groupId, item.toUserId),
+        breakdown: [...item.breakdown].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()),
       }
     })
 
@@ -278,11 +305,98 @@ export default function Payments() {
     }
   }, [load])
 
+  const handleRegisterPayment = useCallback(async (pending: Payment) => {
+    if (!myId || pending.status !== 'pending') return
+    if (pending.toUserId !== myId) {
+      setFeedback({ type: 'error', text: 'Apenas o credor pode marcar como pago.' })
+      return
+    }
+
+    setProcessingPaymentId(pending.id)
+    setFeedback(null)
+
+    const amount = fromCents(toCents(Number(pending.amount) || 0))
+    const payload = {
+      group_id: pending.groupId,
+      from_user: pending.fromUserId,
+      to_user: pending.toUserId,
+      amount,
+    }
+
+    const { error } = await supabase.from('payments').insert(payload)
+
+    if (error) {
+      console.error('payments.register-payment-error', {
+        code: error.code,
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        payload,
+      })
+      setFeedback({ type: 'error', text: 'Erro ao registrar pagamento.' })
+      setProcessingPaymentId(null)
+      return
+    }
+
+    setFeedback({
+      type: 'success',
+      text: pending.toUserId === myId ? 'Cobranca registrada.' : 'Pagamento registrado.',
+    })
+    await load(false)
+    router.refresh()
+    setProcessingPaymentId(null)
+  }, [load, myId, router])
+
+  const buildChargeMessage = useCallback((pending: Payment, pixKey: string) => {
+    const amountLabel = pending.amount.toFixed(2)
+    const pix = pixKey.trim()
+    return [
+      'Ola! 😊',
+      '',
+      `Voce ficou com R$ ${amountLabel} referente ao grupo ${pending.groupName}.`,
+      'Quando puder, me envia via PIX por favor. Obrigado!',
+      '',
+      pix ? `PIX copia e cola: ${pix}` : '',
+    ]
+      .filter(Boolean)
+      .join('\n')
+  }, [])
+
+  const chargeMessage = useMemo(() => {
+    if (!chargeTarget) return ''
+    return buildChargeMessage(chargeTarget, chargePixKey)
+  }, [buildChargeMessage, chargePixKey, chargeTarget])
+
+  const handleOpenCharge = useCallback((pending: Payment) => {
+    setChargeTarget(pending)
+    setChargePixKey(myPixKey)
+  }, [myPixKey])
+
+  const handleOpenDetails = useCallback((pending: Payment) => {
+    setDetailTarget(pending)
+  }, [])
+
+  const handleCopyChargeMessage = useCallback(async () => {
+    if (!chargeMessage) return
+    await navigator.clipboard.writeText(chargeMessage)
+    setFeedback({ type: 'success', text: 'Mensagem de cobranca copiada.' })
+  }, [chargeMessage])
+
+  const handleWhatsAppCharge = useCallback(() => {
+    if (!chargeMessage) return
+    const url = `https://wa.me/?text=${encodeURIComponent(chargeMessage)}`
+    window.open(url, '_blank', 'noopener,noreferrer')
+  }, [chargeMessage])
+
   const filteredPayments = useMemo(() => {
     return payments.filter((payment) => (filter === 'all' ? true : payment.status === filter))
   }, [payments, filter])
 
   const pendingPayments = useMemo(() => filteredPayments.filter((p) => p.status === 'pending'), [filteredPayments])
+
+  const pendingList = useMemo(() => {
+    return [...pendingPayments].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+  }, [pendingPayments])
 
   const payableByPerson = useMemo(() => {
     if (!myId) return [] as PersonPendingSummary[]
@@ -468,6 +582,96 @@ export default function Payments() {
                     </div>
                   )}
                 </div>
+
+                <div className="surface-card p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-base font-semibold text-gray-800">Pendencias abertas</h3>
+                    <span className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-600">{pendingList.length} item(ns)</span>
+                  </div>
+
+                  {pendingList.length === 0 ? (
+                    <p className="text-sm text-gray-600">Nenhuma pendencia aberta.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {pendingList.map((pending) => {
+                        const isCreditor = pending.toUserId === myId
+                        const isDebtor = pending.fromUserId === myId
+                        const counterpartName = isCreditor ? pending.from : pending.to
+                        const counterpartAvatar = isCreditor ? pending.fromAvatarKey : pending.toAvatarKey
+                        const counterpartPremium = isCreditor ? pending.fromIsPremium : pending.toIsPremium
+                        const isProcessing = processingPaymentId === pending.id
+
+                        return (
+                          <div
+                            key={pending.id}
+                            className="p-3 rounded-lg border border-gray-200 bg-gray-50 cursor-pointer"
+                            onClick={() => handleOpenDetails(pending)}
+                          >
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <UserAvatar
+                                  name={counterpartName}
+                                  avatarKey={counterpartAvatar}
+                                  isPremium={counterpartPremium}
+                                  className="w-8 h-8"
+                                  textClassName="text-xs"
+                                />
+                                <div className="min-w-0">
+                                  <p className="text-sm font-medium text-gray-800 truncate">{counterpartName}</p>
+                                  <p className="text-xs text-gray-500 truncate">{pending.groupName}</p>
+                                </div>
+                              </div>
+
+                              <p className="text-sm font-semibold text-gray-800">
+                                {showMyBalance ? `R$ ${pending.amount.toFixed(2)}` : 'Oculto'}
+                              </p>
+                            </div>
+
+                            <div className="mt-3 flex items-center justify-between gap-2">
+                              <p className="text-xs text-gray-500">
+                                {isCreditor ? 'Essa pessoa te deve este valor.' : 'Voce deve este valor para essa pessoa.'}
+                              </p>
+                              <div className="flex items-center gap-2">
+                                {isCreditor && (
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        handleOpenCharge(pending)
+                                      }}
+                                      disabled={isProcessing}
+                                      className="tap-target pressable px-3 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-xs font-medium disabled:opacity-60"
+                                    >
+                                      Cobrar
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        handleRegisterPayment(pending)
+                                      }}
+                                      disabled={isProcessing}
+                                      className="tap-target pressable px-3 py-2 rounded-lg bg-[#5BC5A7] hover:bg-[#4AB396] text-white text-xs font-medium disabled:opacity-60"
+                                    >
+                                      {isProcessing ? 'Salvando...' : 'Marcar como pago'}
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                            {isDebtor && (
+                              <p className="mt-2 text-xs text-gray-500">
+                                Somente quem tem a receber pode confirmar este pagamento.
+                              </p>
+                            )}
+                            <p className="mt-2 text-xs text-gray-500 underline">Toque para ver detalhes da origem</p>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
               </>
             )}
 
@@ -503,6 +707,129 @@ export default function Payments() {
           <p className="text-xs text-gray-500">Espaco reservado para anuncio</p>
         </div>
       </div>
+
+      {detailTarget && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center px-4 pt-4 pb-[calc(6.5rem+env(safe-area-inset-bottom))] sm:p-4">
+          <div className="bg-white w-full max-w-md rounded-2xl shadow-xl p-4 space-y-4 max-h-[calc(100dvh-9rem-env(safe-area-inset-bottom))] sm:max-h-[85vh] overflow-y-auto">
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-semibold text-gray-800">Origem da dívida</h3>
+              <button
+                type="button"
+                onClick={() => setDetailTarget(null)}
+                className="tap-target pressable text-gray-500 hover:text-gray-700"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="rounded-lg border border-gray-200 p-3 bg-gray-50">
+              <p className="text-sm font-medium text-gray-800">
+                {detailTarget.toUserId === myId
+                  ? `${detailTarget.from} te deve`
+                  : `Voce deve para ${detailTarget.to}`}
+                {showMyBalance ? ` R$ ${detailTarget.amount.toFixed(2)}` : ''}
+              </p>
+              <p className="text-xs text-gray-500 mt-1">{detailTarget.groupName}</p>
+            </div>
+
+            <div className="space-y-2">
+              <p className="text-sm font-semibold text-gray-700">Detalhes</p>
+              {(detailTarget.breakdown || []).length === 0 ? (
+                <p className="text-sm text-gray-600">Sem detalhes para esta dívida.</p>
+              ) : (
+                <div className="space-y-2">
+                  {(detailTarget.breakdown || []).map((item) => (
+                    <div key={`${detailTarget.id}-${item.txId}`} className="rounded-lg border border-gray-200 p-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-sm font-medium text-gray-800 truncate">{item.description}</p>
+                        <p className="text-sm font-semibold text-gray-800">
+                          {showMyBalance ? `R$ ${item.amount.toFixed(2)}` : 'Oculto'}
+                        </p>
+                      </div>
+                      <div className="flex items-center justify-between mt-1 text-xs text-gray-500">
+                        <span>{item.groupName}</span>
+                        <span>{new Date(item.date).toLocaleDateString('pt-BR')}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="rounded-lg border border-gray-200 p-3 bg-gray-50 flex items-center justify-between">
+              <p className="text-sm font-semibold text-gray-800">Total</p>
+              <p className="text-sm font-bold text-gray-900">
+                {showMyBalance ? `R$ ${detailTarget.amount.toFixed(2)}` : 'Oculto'}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {chargeTarget && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center px-4 pt-4 pb-[calc(6.5rem+env(safe-area-inset-bottom))] sm:p-4">
+          <div className="bg-white w-full max-w-md rounded-2xl shadow-xl p-4 space-y-4 max-h-[calc(100dvh-9rem-env(safe-area-inset-bottom))] sm:max-h-[85vh] overflow-y-auto">
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-semibold text-gray-800">Cobrar pagamento</h3>
+              <button
+                type="button"
+                onClick={() => setChargeTarget(null)}
+                className="tap-target pressable text-gray-500 hover:text-gray-700"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="rounded-lg border border-gray-200 p-3 bg-gray-50">
+              <p className="text-sm text-gray-600">Grupo</p>
+              <p className="text-sm font-medium text-gray-800">{chargeTarget.groupName}</p>
+              <p className="text-sm text-gray-600 mt-2">Valor</p>
+              <p className="text-lg font-semibold text-gray-800">
+                {showMyBalance ? `R$ ${chargeTarget.amount.toFixed(2)}` : 'Oculto'}
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm text-gray-600">PIX copia e cola (opcional)</label>
+              <input
+                type="text"
+                value={chargePixKey}
+                onChange={(e) => setChargePixKey(e.target.value)}
+                placeholder="Cole sua chave ou codigo PIX"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm text-gray-600">Mensagem</label>
+              <textarea
+                readOnly
+                value={chargeMessage}
+                className="w-full h-40 px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-700"
+              />
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleCopyChargeMessage}
+                className="tap-target pressable flex-1 px-3 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-100 flex items-center justify-center gap-2"
+              >
+                <Copy className="w-4 h-4" />
+                Copiar mensagem
+              </button>
+              <button
+                type="button"
+                onClick={handleWhatsAppCharge}
+                className="tap-target pressable flex-1 px-3 py-2 bg-[#25D366] rounded-lg text-white hover:brightness-95 flex items-center justify-center gap-2"
+              >
+                <MessageCircle className="w-4 h-4" />
+                WhatsApp
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <BottomNav />
     </div>

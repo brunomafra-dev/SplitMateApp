@@ -3,10 +3,17 @@
 import { ArrowLeft, Check, Trash2, X } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import BottomNav from "@/components/ui/bottom-nav";
 import UserAvatar from "@/components/user-avatar";
+import { sanitizeMoney } from "@/lib/money";
+import {
+  buildEqualSplits,
+  buildWeightedSplits,
+  normalizePersistedSplits,
+} from "@/lib/transaction-splits";
+import { computePendingEdges } from "@/lib/pending-balances";
 
 interface Participant {
   id: string;
@@ -42,16 +49,16 @@ export default function EditExpensePage() {
   const [splitType, setSplitType] = useState<"equal" | "custom">("equal");
   const [weights, setWeights] = useState<Record<string, number>>({});
   const [calculatedSplits, setCalculatedSplits] = useState<Record<string, number>>({});
+  const [persistedSplits, setPersistedSplits] = useState<Record<string, number>>({});
   const [selectedParticipants, setSelectedParticipants] = useState<string[]>([]);
 
   const [originalPayerId, setOriginalPayerId] = useState("");
-  const [expenseStatus, setExpenseStatus] = useState("");
   const [paidBySettlement, setPaidBySettlement] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   const isCreator = Boolean(currentUserId && originalPayerId && currentUserId === originalPayerId);
-  const isPaid = String(expenseStatus).toLowerCase() === "paid" || paidBySettlement;
+  const isPaid = paidBySettlement;
   const canEdit = isCreator && !isPaid;
   const canDelete = isCreator && isPaid;
 
@@ -145,13 +152,10 @@ export default function EditExpensePage() {
         };
       });
 
-      setParticipants(normalizedParticipants);
-
-      const defaultWeights: Record<string, number> = {};
+      const participantMap = new Map<string, Participant>();
       for (const participant of normalizedParticipants) {
-        defaultWeights[participant.id] = 1;
+        participantMap.set(participant.id, participant);
       }
-      setWeights(defaultWeights);
 
       const txSelectCandidates = [
         "id,value,description,payer_id,participants,splits,status",
@@ -175,7 +179,7 @@ export default function EditExpensePage() {
           .single();
 
         if (!attempt.error && attempt.data) {
-          tx = attempt.data as TransactionRow;
+          tx = attempt.data as unknown as TransactionRow;
           txError = null;
           break;
         }
@@ -199,60 +203,148 @@ export default function EditExpensePage() {
 
       const transaction = tx as TransactionRow;
       const normalizedPayerId = legacyParticipantToUserId.get(String(transaction.payer_id || "").trim()) || String(transaction.payer_id || "").trim();
+      const normalizedSplits = normalizePersistedSplits(Number(transaction.value) || 0, transaction.splits);
+      setPersistedSplits(normalizedSplits);
+      const splitParticipantIds = Object.keys(normalizedSplits);
+
+      for (const splitParticipantId of splitParticipantIds) {
+        if (!participantMap.has(splitParticipantId)) {
+          participantMap.set(splitParticipantId, {
+            id: splitParticipantId,
+            name: "Participante",
+          });
+        }
+      }
+      if (normalizedPayerId && !participantMap.has(normalizedPayerId)) {
+        participantMap.set(normalizedPayerId, {
+          id: normalizedPayerId,
+          name: "Participante",
+        });
+      }
+
+      const participantsForEdition = Array.from(participantMap.values());
+      setParticipants(participantsForEdition);
+
+      const defaultWeights: Record<string, number> = {};
+      for (const participant of participantsForEdition) {
+        defaultWeights[participant.id] = 1;
+      }
+      setWeights(defaultWeights);
       setValue(String(Number(transaction.value) || ""));
       setDescription(String(transaction.description || ""));
       setPayerId(normalizedPayerId);
       setOriginalPayerId(normalizedPayerId);
-      setExpenseStatus(String(transaction.status || ""));
 
-      const participantIdsFromTx = Array.isArray(transaction.participants)
-        ? transaction.participants
-            .map((id) => {
-              const raw = String(id || "").trim();
-              if (!raw) return "";
-              return legacyParticipantToUserId.get(raw) || raw;
-            })
-            .filter(Boolean)
-        : normalizedParticipants.map((p) => p.id);
-      const validParticipantIdsFromTx = participantIdsFromTx.filter((id) => normalizedParticipants.some((p) => p.id === id));
-      const resolvedParticipants = validParticipantIdsFromTx.length > 0 ? validParticipantIdsFromTx : normalizedParticipants.map((p) => p.id);
+      const participantIdsFromTx = splitParticipantIds.length > 0
+        ? splitParticipantIds
+        : Array.isArray(transaction.participants)
+          ? transaction.participants
+              .map((id) => {
+                const raw = String(id || "").trim();
+                if (!raw) return "";
+                return legacyParticipantToUserId.get(raw) || raw;
+              })
+              .filter(Boolean)
+          : participantsForEdition.map((p) => p.id);
+      const validParticipantIdsFromTx = participantIdsFromTx.filter((id) => participantsForEdition.some((p) => p.id === id));
+      const resolvedParticipants = validParticipantIdsFromTx.length > 0 ? validParticipantIdsFromTx : participantsForEdition.map((p) => p.id);
       setSelectedParticipants(resolvedParticipants);
 
       const { data: paymentRows } = await supabase
         .from("payments")
-        .select("from_user,to_user,amount")
+        .select("from_user,to_user,amount,created_at")
         .eq("group_id", groupId);
 
-      const participantsForCheck = resolvedParticipants.includes(normalizedPayerId)
-        ? resolvedParticipants
-        : [...resolvedParticipants, normalizedPayerId];
-      const txValue = Number(transaction.value) || 0;
-      const equalShare = participantsForCheck.length > 0 ? txValue / participantsForCheck.length : 0;
-      const rawSplits = (transaction.splits && typeof transaction.splits === "object" ? transaction.splits : {}) as Record<string, number>;
+      const groupTransactionsSelectCandidates = [
+        "id,group_id,value,payer_id,description,status,created_at,splits,participants",
+        "id,group_id,value,payer_id,description,status,created_at,splits",
+        "id,group_id,value,payer_id,description,created_at,splits,participants",
+        "id,group_id,value,payer_id,description,created_at,splits",
+        "id,group_id,value,payer_id,description,created_at",
+      ];
 
-      const settled = participantsForCheck
-        .filter((id) => id !== normalizedPayerId)
-        .every((debtorId) => {
-          const debt = Number(rawSplits[debtorId]) > 0 ? Number(rawSplits[debtorId]) : equalShare;
-          const paid = ((paymentRows as Array<{ from_user?: string; to_user?: string; amount?: number }> | null) ?? [])
-            .filter((p) => String(p.from_user || "") === debtorId && String(p.to_user || "") === normalizedPayerId)
-            .reduce((acc, p) => acc + (Number(p.amount) || 0), 0);
-          return Math.max(0, debt - paid) <= 0.009;
+      let groupTransactionsRows: Array<{
+        id?: string;
+        group_id?: string;
+        value?: number;
+        payer_id?: string;
+        description?: string;
+        status?: string;
+        created_at?: string;
+        participants?: string[];
+        splits?: Record<string, number>;
+      }> | null = null;
+      let groupTransactionsError: any = null;
+
+      for (const selectClause of groupTransactionsSelectCandidates) {
+        const attempt = await supabase
+          .from("transactions")
+          .select(selectClause)
+          .eq("group_id", groupId);
+
+        if (!attempt.error) {
+          groupTransactionsRows = (attempt.data as typeof groupTransactionsRows) ?? [];
+          groupTransactionsError = null;
+          break;
+        }
+        groupTransactionsError = attempt.error;
+      }
+
+      if (groupTransactionsError) {
+        console.error("edit-expense.group-transactions-load-error", {
+          code: groupTransactionsError?.code,
+          message: groupTransactionsError?.message,
+          details: groupTransactionsError?.details,
+          hint: groupTransactionsError?.hint,
+          groupId,
+          expenseId,
         });
+      }
+
+      const safeGroupTransactions = ((groupTransactionsRows as typeof groupTransactionsRows) ?? []).map((row) => ({
+        id: String(row.id || ""),
+        group_id: String(row.group_id || groupId),
+        value: Number(row.value) || 0,
+        payer_id: String(row.payer_id || ""),
+        description: String(row.description || ""),
+        // Ignore persisted status here: settlement check must be derived from splits/payments only.
+        status: "",
+        created_at: row.created_at || undefined,
+        participants: Array.isArray(row.participants) ? row.participants : undefined,
+        splits: (row.splits && typeof row.splits === "object") ? row.splits : undefined,
+      }));
+
+      const safePayments = ((paymentRows as Array<{ from_user?: string; to_user?: string; amount?: number; created_at?: string }> | null) ?? []).map((row) => ({
+        group_id: groupId,
+        from_user: String(row.from_user || ""),
+        to_user: String(row.to_user || ""),
+        amount: Number(row.amount) || 0,
+        created_at: row.created_at || undefined,
+      }));
+
+      let settled = false;
+      if (safeGroupTransactions.some((txRow) => txRow.id === expenseId)) {
+        const pendingEdges = computePendingEdges(safeGroupTransactions, safePayments);
+        const hasPendingForThisExpense = pendingEdges.some((edge) => edge.txId === expenseId && Number(edge.amount) > 0);
+        settled = !hasPendingForThisExpense;
+      } else {
+        console.error("edit-expense.settlement-check-skip", { groupId, expenseId });
+      }
+
       setPaidBySettlement(settled);
-      if (String(transaction.status || "").toLowerCase() === "paid" || settled) {
+      if (settled) {
         setFeedback({ type: "error", text: "Este gasto já foi pago e não pode ser editado." });
       }
 
-      if (transaction.splits && Object.keys(transaction.splits).length > 0) {
-        setCalculatedSplits(transaction.splits);
+      if (Object.keys(normalizedSplits).length > 0) {
+        setCalculatedSplits(normalizedSplits);
         const weightMap: Record<string, number> = { ...defaultWeights };
-        for (const [key, splitValue] of Object.entries(transaction.splits)) {
+        for (const [key, splitValue] of Object.entries(normalizedSplits)) {
           weightMap[key] = Number(splitValue) > 0 ? Number(splitValue) : 1;
         }
         setWeights(weightMap);
 
-        const values = Object.values(transaction.splits);
+        const values = Object.values(normalizedSplits);
         const first = Number(values[0] || 0);
         const allEqual = values.every((v) => Math.abs(Number(v) - first) < 0.005);
         setSplitType(allEqual ? "equal" : "custom");
@@ -270,6 +362,38 @@ export default function EditExpensePage() {
     );
   };
 
+  const splitPreviewByParticipant = useMemo(() => {
+    const total = Number.parseFloat(value);
+    if (!Number.isFinite(total) || total <= 0) {
+      if (Object.keys(calculatedSplits).length > 0) return calculatedSplits;
+      if (Object.keys(persistedSplits).length > 0) return persistedSplits;
+      return {} as Record<string, number>;
+    }
+
+    const selected = selectedParticipants.length > 0
+      ? selectedParticipants
+      : participants.map((p) => p.id);
+    if (selected.length === 0) return {} as Record<string, number>;
+
+    if (splitType === "custom") {
+      const manualWeights: Record<string, number> = { ...weights };
+      if ((manualWeights[payerId] ?? 0) <= 0) {
+        manualWeights[payerId] = 1;
+      }
+      const weightedParticipants = selected.filter((id) => Number(manualWeights[id] || 0) > 0);
+      if (!weightedParticipants.includes(payerId)) {
+        weightedParticipants.push(payerId);
+      }
+      return buildWeightedSplits(sanitizeMoney(total), weightedParticipants, manualWeights);
+    }
+
+    if (splitType === "equal") {
+      return buildEqualSplits(sanitizeMoney(total), selected);
+    }
+
+    return {} as Record<string, number>;
+  }, [calculatedSplits, participants, payerId, persistedSplits, selectedParticipants, splitType, value, weights]);
+
   const calculateEqualSplits = () => {
     const total = Number.parseFloat(value);
     if (!total || total <= 0) {
@@ -278,11 +402,7 @@ export default function EditExpensePage() {
     }
 
     const list = selectedParticipants.length > 0 ? selectedParticipants : participants.map((p) => p.id);
-    const per = Number((total / Math.max(list.length, 1)).toFixed(2));
-    const next: Record<string, number> = {};
-    for (const id of list) {
-      next[id] = per;
-    }
+    const next = buildEqualSplits(sanitizeMoney(total), list);
 
     setCalculatedSplits(next);
     return next;
@@ -295,17 +415,20 @@ export default function EditExpensePage() {
       return {} as Record<string, number>;
     }
 
-    const list = selectedParticipants.length > 0 ? selectedParticipants : participants.map((p) => p.id);
-    const totalWeight = list.reduce((acc, id) => acc + Math.max(Number(weights[id] || 0), 0), 0);
-    if (totalWeight <= 0) {
-      setCalculatedSplits({});
-      return {} as Record<string, number>;
+    const baseList = selectedParticipants.length > 0 ? selectedParticipants : participants.map((p) => p.id);
+    const manualWeights: Record<string, number> = { ...weights };
+    if ((manualWeights[payerId] ?? 0) <= 0) {
+      manualWeights[payerId] = 1;
+    }
+    const list = baseList.filter((id) => Number(manualWeights[id] || 0) > 0);
+    if (!list.includes(payerId)) {
+      list.push(payerId);
     }
 
-    const next: Record<string, number> = {};
-    for (const id of list) {
-      const w = Math.max(Number(weights[id] || 0), 0);
-      next[id] = Number(((total * w) / totalWeight).toFixed(2));
+    const next = buildWeightedSplits(sanitizeMoney(total), list, manualWeights);
+    if (Object.keys(next).length === 0) {
+      setCalculatedSplits({});
+      return {} as Record<string, number>;
     }
 
     setCalculatedSplits(next);
@@ -329,47 +452,75 @@ export default function EditExpensePage() {
     }
     setFeedback(null);
 
-    const selected = selectedParticipants.length > 0 ? selectedParticipants : participants.map((p) => p.id);
+    const selected = Array.from(
+      new Set((selectedParticipants.length > 0 ? selectedParticipants : participants.map((p) => p.id)).map((id) => String(id || "").trim()).filter(Boolean))
+    );
     if (!selected.includes(payerId)) {
       selected.push(payerId);
     }
 
-    let splitsToSave = splitType === "equal" ? calculateEqualSplits() : calculateCustomSplits();
+    const splitsToSave = splitType === "equal" ? calculateEqualSplits() : calculateCustomSplits();
     if (Object.keys(splitsToSave).length === 0) {
-      splitsToSave = calculateEqualSplits();
+      setFeedback({
+        type: "error",
+        text: splitType === "custom"
+          ? "Divisão manual inválida. Ajuste os pesos dos participantes."
+          : "Divisão inválida para este gasto.",
+      });
+      return;
     }
 
-    const { data: updatedRow, error } = await supabase
+    const normalizedValue = sanitizeMoney(Number(value));
+
+    const baseUpdatePayload = {
+      value: normalizedValue,
+      description: description.trim(),
+      payer_id: payerId,
+      splits: splitsToSave,
+    };
+
+    let updateAttempt = await supabase
       .from("transactions")
       .update({
-        value: Number(value),
-        description: description.trim(),
-        payer_id: payerId,
+        ...baseUpdatePayload,
         participants: selected,
-        splits: splitsToSave,
       })
       .eq("id", expenseId)
       .eq("payer_id", currentUserId);
-      
-    if (!error) {
-      const check = await supabase
+
+    if (
+      updateAttempt.error?.code === "PGRST204" &&
+      String(updateAttempt.error?.message || "").includes("'participants'")
+    ) {
+      updateAttempt = await supabase
         .from("transactions")
-        .select("id")
+        .update(baseUpdatePayload)
         .eq("id", expenseId)
-        .eq("payer_id", currentUserId)
-        .maybeSingle();
-      if (check.error) {
-        console.error("edit-expense.update-check-error", check.error);
-      }
-      if (!check.data && !updatedRow) {
-        setFeedback({ type: "error", text: "Sem permissão para editar este gasto." });
-        return;
-      }
+        .eq("payer_id", currentUserId);
     }
 
-    if (error) {
-      console.error("edit-expense.update-error", error);
+    if (updateAttempt.error) {
+      console.error("edit-expense.update-error", {
+        code: updateAttempt.error.code,
+        message: updateAttempt.error.message,
+        details: updateAttempt.error.details,
+        hint: updateAttempt.error.hint,
+      });
       setFeedback({ type: "error", text: "Erro ao atualizar gasto." });
+      return;
+    }
+
+    const check = await supabase
+      .from("transactions")
+      .select("id")
+      .eq("id", expenseId)
+      .eq("payer_id", currentUserId)
+      .maybeSingle();
+    if (check.error) {
+      console.error("edit-expense.update-check-error", check.error);
+    }
+    if (!check.data) {
+      setFeedback({ type: "error", text: "Sem permissão para editar este gasto." });
       return;
     }
 
@@ -486,6 +637,7 @@ export default function EditExpensePage() {
           <div className="mt-2 space-y-2">
             {participants.map((participant) => {
               const isSelected = selectedParticipants.includes(participant.id);
+              const splitValue = Number(splitPreviewByParticipant[participant.id] || 0);
               return (
                 <button
                   key={participant.id}
@@ -498,7 +650,14 @@ export default function EditExpensePage() {
                     <UserAvatar name={participant.name} avatarKey={participant.avatarKey} isPremium={participant.isPremium} className="w-8 h-8" textClassName="text-xs" />
                     <span>{participant.name}</span>
                   </span>
-                  <span className="text-sm text-gray-600">{isSelected ? "participa" : "não"}</span>
+                  <span className="text-right">
+                    <span className="block text-sm font-semibold text-gray-800">
+                      {isSelected ? `R$ ${splitValue.toFixed(2)}` : "-"}
+                    </span>
+                    <span className="block text-xs text-gray-500">
+                      {isSelected ? "participa" : "não"}
+                    </span>
+                  </span>
                 </button>
               );
             })}

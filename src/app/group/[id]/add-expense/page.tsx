@@ -3,10 +3,12 @@
 import { ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
-import { useEffect, useState } from 'react'
+import { useMemo, useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import BottomNav from '@/components/ui/bottom-nav'
 import UserAvatar from '@/components/user-avatar'
+import { sanitizeMoney } from '@/lib/money'
+import { buildEqualSplits, buildWeightedSplits } from '@/lib/transaction-splits'
 
 interface Participant {
   id: string
@@ -31,6 +33,7 @@ export default function AddExpense() {
   const [description, setDescription] = useState('')
   const [payerId, setPayerId] = useState('')
   const [splitType, setSplitType] = useState<'equal' | 'manual'>('equal')
+  const [weights, setWeights] = useState<Record<string, number>>({})
   const [selectedParticipants, setSelectedParticipants] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -121,6 +124,11 @@ export default function AddExpense() {
           : (participantsList[0]?.id || session.user.id)
       )
       setSelectedParticipants(participantsList.map((p) => p.id))
+      const initialWeights: Record<string, number> = {}
+      for (const participant of participantsList) {
+        initialWeights[participant.id] = 1
+      }
+      setWeights(initialWeights)
       setLoading(false)
     }
 
@@ -135,41 +143,103 @@ export default function AddExpense() {
     }
   }
 
+  const participantsForSplit = useMemo(() => {
+    return Array.from(
+      new Set(
+        (selectedParticipants.length > 0 ? [...selectedParticipants, payerId] : [payerId])
+          .map((id) => String(id || '').trim())
+          .filter(Boolean)
+      )
+    )
+  }, [payerId, selectedParticipants])
+
+  const normalizedAmount = useMemo(() => {
+    const parsed = parseFloat(amount)
+    return Number.isFinite(parsed) && parsed > 0 ? sanitizeMoney(parsed) : 0
+  }, [amount])
+
+  const splitPreview = useMemo(() => {
+    if (!normalizedAmount || participantsForSplit.length === 0) return {} as Record<string, number>
+
+    if (splitType === 'manual') {
+      const manualWeights: Record<string, number> = { ...weights }
+      if ((manualWeights[payerId] ?? 0) <= 0) {
+        manualWeights[payerId] = 1
+      }
+      const manualParticipants = participantsForSplit.filter((id) => Number(manualWeights[id] || 0) > 0)
+      if (!manualParticipants.includes(payerId)) {
+        manualParticipants.push(payerId)
+      }
+      return buildWeightedSplits(normalizedAmount, manualParticipants, manualWeights)
+    }
+
+    return buildEqualSplits(normalizedAmount, participantsForSplit)
+  }, [normalizedAmount, participantsForSplit, payerId, splitType, weights])
+
   const handleSave = async () => {
-    if (!amount || !description || !payerId || selectedParticipants.length === 0) {
+    if (!amount || !description || !payerId) {
       setFeedback({ type: 'error', text: 'Preencha todos os campos.' })
       return
     }
 
     const amountValue = parseFloat(amount)
     if (isNaN(amountValue) || amountValue <= 0) {
-      setFeedback({ type: 'error', text: 'Valor inválido.' })
+      setFeedback({ type: 'error', text: 'Valor invalido.' })
       return
     }
 
     if (!group) return
 
+    if (participantsForSplit.length === 0) {
+      setFeedback({ type: 'error', text: 'Selecione pelo menos um participante.' })
+      return
+    }
+
     setSaving(true)
     setFeedback(null)
 
-    const participantsForSplit = selectedParticipants.length > 0 ? selectedParticipants : [payerId]
-    const splitAmount = Number((amountValue / participantsForSplit.length).toFixed(2))
+    const normalizedAmountValue = sanitizeMoney(amountValue)
 
-    const splits: Record<string, number> = {}
-    for (const pid of participantsForSplit) {
-      splits[pid] = splitAmount
+    let splits: Record<string, number> = {}
+    let participantsPayload = [...participantsForSplit]
+
+    if (splitType === 'manual') {
+      const manualWeights: Record<string, number> = { ...weights }
+      if ((manualWeights[payerId] ?? 0) <= 0) {
+        manualWeights[payerId] = 1
+      }
+      const manualParticipants = participantsForSplit.filter((id) => Number(manualWeights[id] || 0) > 0)
+      if (!manualParticipants.includes(payerId)) {
+        manualParticipants.push(payerId)
+      }
+      participantsPayload = Array.from(new Set(manualParticipants))
+      splits = buildWeightedSplits(normalizedAmountValue, participantsPayload, manualWeights)
+    } else {
+      participantsPayload = [...participantsForSplit]
+      splits = buildEqualSplits(normalizedAmountValue, participantsPayload)
+    }
+
+    if (Object.keys(splits).length === 0) {
+      setSaving(false)
+      setFeedback({
+        type: 'error',
+        text: splitType === 'manual'
+          ? 'Divisao manual invalida. Ajuste os pesos dos participantes.'
+          : 'Divisao invalida para este gasto.',
+      })
+      return
     }
 
     const basePayload = {
       group_id: groupId,
-      value: amountValue,
+      value: normalizedAmountValue,
       description: description.trim(),
       payer_id: payerId,
     }
 
     let { error } = await supabase.from('transactions').insert({
       ...basePayload,
-      participants: participantsForSplit,
+      participants: participantsPayload,
       splits,
     })
 
@@ -178,11 +248,6 @@ export default function AddExpense() {
         ...basePayload,
         splits,
       })
-      error = retry.error
-    }
-
-    if (error?.code === 'PGRST204' && error.message?.includes("'splits'")) {
-      const retry = await supabase.from('transactions').insert(basePayload)
       error = retry.error
     }
 
@@ -198,8 +263,8 @@ export default function AddExpense() {
         payload: {
           group_id: groupId,
           payer_id: payerId,
-          participants: participantsForSplit,
-          value: amountValue,
+          participants: participantsPayload,
+          value: normalizedAmountValue,
         },
       })
       setFeedback({ type: 'error', text: 'Erro ao salvar gasto.' })
@@ -333,9 +398,7 @@ export default function AddExpense() {
             </p>
             {group.participantsList.map((participant) => {
               const isSelected = selectedParticipants.includes(participant.id)
-              const splitAmountPreview = amount && selectedParticipants.length > 0
-                ? (parseFloat(amount) / selectedParticipants.length).toFixed(2)
-                : '0.00'
+              const splitAmountPreview = Number(splitPreview[participant.id] || 0).toFixed(2)
 
               return (
                 <button
@@ -357,6 +420,37 @@ export default function AddExpense() {
               )
             })}
           </div>
+
+          {splitType === 'manual' && (
+            <div className="mt-4 space-y-2">
+              <p className="text-xs text-gray-600">Defina o peso de cada participante (0 = nao participa)</p>
+              {group.participantsList.map((participant) => {
+                const currentWeight = Number(weights[participant.id] ?? (participant.id === payerId ? 1 : 0))
+                return (
+                  <div key={`weight-${participant.id}`} className="flex items-center justify-between p-2 border border-gray-200 rounded-lg">
+                    <span className="flex items-center gap-3">
+                      <UserAvatar name={participant.name} avatarKey={participant.avatarKey} isPremium={participant.isPremium} className="w-8 h-8" textClassName="text-xs" />
+                      <span className="text-sm text-gray-700">{participant.name}</span>
+                    </span>
+                    <input
+                      type="number"
+                      min={participant.id === payerId ? 1 : 0}
+                      step="1"
+                      value={currentWeight}
+                      onChange={(e) => {
+                        const next = Number(e.target.value)
+                        setWeights((prev) => ({
+                          ...prev,
+                          [participant.id]: Number.isFinite(next) ? next : 0,
+                        }))
+                      }}
+                      className="w-20 border border-gray-300 rounded p-1 text-center text-sm"
+                    />
+                  </div>
+                )
+              })}
+            </div>
+          )}
         </div>
 
         <button

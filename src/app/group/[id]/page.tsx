@@ -5,11 +5,17 @@ import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabase'
-import { calculateUserBalance, type BalancePayment, type BalanceTransaction } from '@/lib/balance'
 import { generateSecureInviteToken } from '@/lib/invites'
 import { buildInviteLink } from '@/lib/site-url'
 import BottomNav from '@/components/ui/bottom-nav'
 import UserAvatar from '@/components/user-avatar'
+import { computePendingEdges } from '@/lib/pending-balances'
+import { fromCents, toCents } from '@/lib/money'
+import { normalizePersistedSplits } from '@/lib/transaction-splits'
+import SuggestedSettlements from '@/components/group/suggested-settlements'
+import { buildBalancesFromEdges, simplifyDebts, type SimplifiedPayment } from '@/lib/debt-simplifier'
+import DebtBreakdownModal from '@/components/debt/debt-breakdown-modal'
+import { auditGroupFinancialIntegrity, type FinancialAuditReport } from '@/lib/financial-audit'
 
 interface Participant {
   id: string
@@ -21,13 +27,24 @@ interface Participant {
   email?: string
 }
 
-interface TransactionRow extends BalanceTransaction {
+interface TransactionRow {
+  id: string
+  group_id: string
+  value: number
+  payer_id: string
+  participants?: string[] | null
+  splits?: Record<string, number> | null
+  status?: string | null
   description: string
   created_at?: string
-  status?: string
 }
 
-interface PaymentRow extends BalancePayment {}
+interface PaymentRow {
+  group_id: string
+  from_user: string
+  to_user: string
+  amount: number
+}
 interface ParticipantUserRow {
   user_id: string
   role?: string
@@ -78,6 +95,22 @@ type GroupReport = {
   participants: ParticipantSummary[]
 }
 
+type PersonBalanceRow = {
+  userId: string
+  name: string
+  avatarKey?: string
+  isPremium?: boolean
+  amountCents: number
+}
+
+type DebtBreakdownTarget = {
+  debtorId: string
+  creditorId: string
+  debtorName: string
+  debtorAvatarKey?: string
+  debtorIsPremium?: boolean
+}
+
 export default function GroupPage() {
   const params = useParams()
   const router = useRouter()
@@ -98,6 +131,12 @@ export default function GroupPage() {
   const [report, setReport] = useState<GroupReport | null>(null)
   const [reportFeedback, setReportFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const [isReportExpanded, setIsReportExpanded] = useState(false)
+  const [suggestedSettlements, setSuggestedSettlements] = useState<SimplifiedPayment[]>([])
+  const [registeringSuggestedSettlements, setRegisteringSuggestedSettlements] = useState(false)
+  const [personBalances, setPersonBalances] = useState<PersonBalanceRow[]>([])
+  const [debtBreakdownTarget, setDebtBreakdownTarget] = useState<DebtBreakdownTarget | null>(null)
+  const [auditReport, setAuditReport] = useState<FinancialAuditReport>({ valid: true, issues: [] })
+  const [showAuditIssues, setShowAuditIssues] = useState(false)
   const isMountedRef = useRef(true)
 
   const loadGroup = useCallback(async () => {
@@ -121,7 +160,7 @@ export default function GroupPage() {
     for (const selectClause of groupSelectCandidates) {
       const attempt = await supabase.from('groups').select(selectClause).eq('id', groupId).single()
       if (!attempt.error && attempt.data) {
-        groupRow = attempt.data as GroupRow
+        groupRow = attempt.data as unknown as GroupRow
         groupError = null
         break
       }
@@ -205,7 +244,7 @@ export default function GroupPage() {
 
     const { data: txRows, error: txError } = await supabase
       .from('transactions')
-      .select('id,group_id,value,payer_id,description,created_at')
+      .select('*')
       .eq('group_id', groupId)
       .order('created_at', { ascending: false })
 
@@ -264,27 +303,90 @@ export default function GroupPage() {
       }
     }
 
-    const activeParticipantIds = participantsList.map((p) => String(p.user_id || p.id))
     const safeTx: TransactionRow[] = ((txRows as TransactionRow[] | null) ?? []).map((tx) => ({
       ...tx,
       value: Number(tx.value) || 0,
-      participants:
-        Array.isArray((tx as { participants?: string[] }).participants) &&
-        ((tx as { participants?: string[] }).participants || []).length > 0
-          ? ((tx as { participants?: string[] }).participants || []).map((id) => String(id))
-          : activeParticipantIds,
+      payer_id: String(tx.payer_id || ''),
+      description: String(tx.description || ''),
+      created_at: tx.created_at || new Date().toISOString(),
+      status: String(tx.status || ''),
+      participants: Array.isArray(tx.participants) ? tx.participants.map((id) => String(id || '').trim()).filter(Boolean) : [],
+      splits: (tx.splits && typeof tx.splits === 'object' ? tx.splits : {}) as Record<string, number>,
     }))
 
     const safePayments: PaymentRow[] = ((payRows as PaymentRow[] | null) ?? []).map((p) => ({
       ...p,
       amount: Number(p.amount) || 0,
     }))
+    const audit = auditGroupFinancialIntegrity(safeTx, participantsList, safePayments)
 
-    const summary = calculateUserBalance(safeTx, currentUserId, safePayments)
+    const pendingEdges = computePendingEdges(
+      safeTx.map((tx) => ({
+        id: tx.id,
+        group_id: tx.group_id,
+        payer_id: tx.payer_id,
+        value: Number(tx.value) || 0,
+        description: tx.description,
+        status: tx.status || '',
+        created_at: tx.created_at,
+        participants: Array.isArray(tx.participants) ? tx.participants : undefined,
+        splits: (tx.splits || undefined) as Record<string, number> | undefined,
+      })),
+      safePayments.map((p) => ({
+        group_id: p.group_id,
+        from_user: p.from_user,
+        to_user: p.to_user,
+        amount: Number(p.amount) || 0,
+      }))
+    )
+    const balances = buildBalancesFromEdges(pendingEdges)
+    const simplified = simplifyDebts(balances)
+
+    const pendingTxIds = new Set(pendingEdges.map((edge) => edge.txId))
+
+    const groupTotalSpent = safeTx.reduce((acc, tx) => acc + (Number(tx.value) || 0), 0)
+    let groupBalanceCents = 0
+    for (const edge of pendingEdges) {
+      const cents = toCents(edge.amount)
+      if (String(edge.toUserId) === String(currentUserId)) groupBalanceCents += cents
+      if (String(edge.fromUserId) === String(currentUserId)) groupBalanceCents -= cents
+    }
+
+    const participantByUserId = new Map(
+      participantsList.map((participant) => [String(participant.user_id || participant.id), participant] as const)
+    )
+    const personBalanceMap = new Map<string, number>()
+    for (const edge of pendingEdges) {
+      const cents = toCents(edge.amount)
+      if (cents <= 0) continue
+
+      if (String(edge.toUserId) === String(currentUserId) && String(edge.fromUserId) !== String(currentUserId)) {
+        const key = String(edge.fromUserId)
+        personBalanceMap.set(key, (personBalanceMap.get(key) || 0) + cents)
+      } else if (String(edge.fromUserId) === String(currentUserId) && String(edge.toUserId) !== String(currentUserId)) {
+        const key = String(edge.toUserId)
+        personBalanceMap.set(key, (personBalanceMap.get(key) || 0) - cents)
+      }
+    }
+    const balancesByPerson: PersonBalanceRow[] = Array.from(personBalanceMap.entries())
+      .filter(([, amountCents]) => amountCents !== 0)
+      .map(([userId, amountCents]) => {
+        const participant = participantByUserId.get(userId)
+        return {
+          userId,
+          name: participant?.name || 'Participante',
+          avatarKey: participant?.avatar_key,
+          isPremium: participant?.is_premium,
+          amountCents,
+        }
+      })
+      .sort((a, b) => Math.abs(b.amountCents) - Math.abs(a.amountCents))
 
     const reportMap = new Map<string, ParticipantSummary>()
+    const participantNameMap = new Map<string, string>()
     for (const participant of participantsList) {
       const userId = String(participant.user_id || participant.id)
+      participantNameMap.set(userId, participant.name || 'Participante')
       reportMap.set(userId, {
         userId,
         name: participant.name || 'Participante',
@@ -296,55 +398,48 @@ export default function GroupPage() {
       })
     }
 
-    const pendingByKey = new Map<string, number>()
-    const paidByKey = new Map<string, number>()
+    const ensureReportRow = (userId: string) => {
+      const key = String(userId || '').trim()
+      if (!key) return null
+      const existing = reportMap.get(key)
+      if (existing) return existing
+      const fallbackName = participantNameMap.get(key) || (key === String(currentUserId) ? 'Voce' : 'Participante')
+      const created: ParticipantSummary = {
+        userId: key,
+        name: fallbackName,
+        totalPaid: 0,
+        totalShare: 0,
+        pendingToReceive: 0,
+        pendingToPay: 0,
+        netPending: 0,
+      }
+      reportMap.set(key, created)
+      return created
+    }
 
     for (const tx of safeTx) {
       const payerId = String(tx.payer_id || '')
-      const txParticipants = (Array.isArray(tx.participants) ? tx.participants : activeParticipantIds).map((id) => String(id))
-      const participantIds = txParticipants.includes(payerId) ? txParticipants : [...txParticipants, payerId]
-      if (participantIds.length === 0) continue
+      const normalizedSplits = normalizePersistedSplits(Number(tx.value) || 0, tx.splits)
+      const splitEntries = Object.entries(normalizedSplits)
 
-      const splits = ((tx as { splits?: Record<string, number> }).splits || {}) as Record<string, number>
-      const equalShare = participantIds.length > 0 ? (Number(tx.value) || 0) / participantIds.length : 0
-
-      const payerSummary = reportMap.get(payerId)
+      const payerSummary = ensureReportRow(payerId)
       if (payerSummary) payerSummary.totalPaid += Number(tx.value) || 0
 
-      for (const participantId of participantIds) {
-        const share = Number(splits[participantId]) > 0 ? Number(splits[participantId]) : equalShare
-        const participantSummary = reportMap.get(participantId)
+      for (const [participantId, share] of splitEntries) {
+        const participantSummary = ensureReportRow(participantId)
         if (participantSummary) participantSummary.totalShare += share
       }
-
-      if (String((tx as { status?: string }).status || '').toLowerCase() === 'paid') continue
-
-      if (participantIds.length > 1) {
-        for (const debtorId of participantIds.filter((id) => id !== payerId)) {
-          const debt = Number(splits[debtorId]) > 0 ? Number(splits[debtorId]) : equalShare
-          const key = `${debtorId}|${payerId}`
-          pendingByKey.set(key, (pendingByKey.get(key) || 0) + debt)
-        }
-      }
-    }
-
-    for (const payment of safePayments) {
-      const key = `${payment.from_user}|${payment.to_user}`
-      paidByKey.set(key, (paidByKey.get(key) || 0) + (Number(payment.amount) || 0))
     }
 
     let totalPending = 0
-    for (const [key, debt] of pendingByKey.entries()) {
-      const paid = paidByKey.get(key) || 0
-      const outstanding = Math.max(0, debt - paid)
-      if (outstanding <= 0.009) continue
-
-      const [debtorId, creditorId] = key.split('|')
-      const debtor = reportMap.get(debtorId)
-      const creditor = reportMap.get(creditorId)
-      if (debtor) debtor.pendingToPay += outstanding
-      if (creditor) creditor.pendingToReceive += outstanding
-      totalPending += outstanding
+    for (const edge of pendingEdges) {
+      const amount = Number(edge.amount) || 0
+      if (amount <= 0) continue
+      const debtor = ensureReportRow(edge.fromUserId)
+      const creditor = ensureReportRow(edge.toUserId)
+      if (debtor) debtor.pendingToPay += amount
+      if (creditor) creditor.pendingToReceive += amount
+      totalPending += amount
     }
 
     const participantReport = Array.from(reportMap.values()).map((item) => ({
@@ -357,37 +452,16 @@ export default function GroupPage() {
     }))
 
     const groupReport: GroupReport = {
-      totalSpent: Number(summary.totalSpent.toFixed(2)),
+      totalSpent: Number(groupTotalSpent.toFixed(2)),
       totalSettled: Number(safePayments.reduce((acc, p) => acc + (Number(p.amount) || 0), 0).toFixed(2)),
       totalPending: Number(totalPending.toFixed(2)),
       participants: participantReport.sort((a, b) => b.pendingToReceive - a.pendingToReceive),
     }
 
-    const isTransactionPaid = (tx: TransactionRow) => {
-      if (String((tx as { status?: string }).status || '').toLowerCase() === 'paid') return true
-
-      const payerId = String(tx.payer_id || '')
-      const txParticipants = Array.isArray(tx.participants) ? tx.participants.map((id) => String(id)) : []
-      const participantIds = txParticipants.includes(payerId) ? txParticipants : [...txParticipants, payerId]
-      if (participantIds.length <= 1) return true
-
-      const splits = ((tx as { splits?: Record<string, number> }).splits || {}) as Record<string, number>
-      const equalShare = participantIds.length > 0 ? (Number(tx.value) || 0) / participantIds.length : 0
-
-      return participantIds
-        .filter((id) => id !== payerId)
-        .every((debtorId) => {
-          const debt = Number(splits[debtorId]) > 0 ? Number(splits[debtorId]) : equalShare
-          const paid = safePayments
-            .filter((p) => String(p.from_user || '') === debtorId && String(p.to_user || '') === payerId)
-            .reduce((acc, p) => acc + (Number(p.amount) || 0), 0)
-          return Math.max(0, debt - paid) <= 0.009
-        })
-    }
-
     const transactions = safeTx.map((tx) => {
       const payer = participantsList.find((p) => String(p.user_id || p.id) === tx.payer_id)
-      const paid = isTransactionPaid(tx)
+      const txParticipantIds = Object.keys(normalizePersistedSplits(Number(tx.value) || 0, tx.splits))
+      const paid = !pendingTxIds.has(tx.id)
       return {
         id: tx.id,
         description: tx.description,
@@ -395,8 +469,8 @@ export default function GroupPage() {
         payerId: tx.payer_id,
         payerName: tx.payer_id === currentUserId ? 'Voce' : payer?.name || 'Alguem',
         date: tx.created_at || new Date().toISOString(),
-        participants: tx.participants || [],
-        status: String((tx as { status?: string }).status || '').toLowerCase(),
+        participants: txParticipantIds,
+        status: String(tx.status || '').toLowerCase(),
         isPaid: paid,
       }
     })
@@ -407,14 +481,18 @@ export default function GroupPage() {
       id: groupRow.id,
       name: groupRow.name,
       category: String((groupRow as { category?: string }).category || 'other'),
-      totalSpent: summary.totalSpent,
-      balance: summary.balance,
+      totalSpent: Number(groupTotalSpent.toFixed(2)),
+      balance: fromCents(groupBalanceCents),
       participants: participantsList.length,
       participantsList,
       transactions,
     })
     setReport(groupReport)
     setIsOwner(String(myRoleRow?.role || '') === 'owner')
+    setSuggestedSettlements(simplified)
+    setPersonBalances(balancesByPerson)
+    setAuditReport(audit)
+    if (audit.valid) setShowAuditIssues(false)
 
     setLoading(false)
   }, [currentUserId, groupId, router])
@@ -551,25 +629,114 @@ export default function GroupPage() {
     setReportFeedback({ type: 'success', text: 'PDF pronto para salvar via impressao.' })
   }, [group, report])
 
+  const handleRegisterSuggestedSettlements = useCallback(async () => {
+    if (!group || suggestedSettlements.length === 0) return
+
+    setRegisteringSuggestedSettlements(true)
+    setReportFeedback(null)
+
+    let successCount = 0
+    let failCount = 0
+
+    for (const settlement of suggestedSettlements) {
+      const payload = {
+        group_id: group.id,
+        from_user: settlement.fromUserId,
+        to_user: settlement.toUserId,
+        amount: fromCents(settlement.amountCents),
+      }
+
+      const { error } = await supabase.from('payments').insert(payload)
+      if (error) {
+        failCount += 1
+        console.error('group.suggested-settlement-insert-error', {
+          code: error.code,
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+          payload,
+        })
+      } else {
+        successCount += 1
+      }
+    }
+
+    if (successCount > 0 && failCount === 0) {
+      setReportFeedback({ type: 'success', text: 'Pagamentos sugeridos registrados com sucesso.' })
+    } else if (successCount > 0 && failCount > 0) {
+      setReportFeedback({ type: 'error', text: `Foram registrados ${successCount} pagamentos e ${failCount} falharam.` })
+    } else {
+      setReportFeedback({ type: 'error', text: 'Nao foi possivel registrar os pagamentos sugeridos.' })
+    }
+
+    await loadGroup()
+    setRegisteringSuggestedSettlements(false)
+  }, [group, suggestedSettlements, loadGroup])
+
   const handleAddManualParticipant = useCallback(async () => {
     if (!group || !manualParticipantName.trim()) return
 
-    const newParticipant = {
-      id: crypto.randomUUID(),
-      name: manualParticipantName.trim(),
+    const candidate = manualParticipantName.trim()
+    const normalizedUsername = candidate.toLowerCase()
+
+    let targetUserId = ''
+    const { data: exactUser, error: exactUserError } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('username', normalizedUsername)
+      .maybeSingle()
+
+    if (exactUserError) {
+      console.error('group.manual-participant-profile-lookup-error', exactUserError)
+      return
     }
 
-    const nextParticipants = [...group.participantsList, newParticipant]
+    if (exactUser?.id) {
+      targetUserId = String(exactUser.id)
+    } else {
+      const { data: byFullName, error: byFullNameError } = await supabase
+        .from('profiles')
+        .select('id,full_name')
+        .ilike('full_name', candidate)
+        .limit(2)
+
+      if (byFullNameError) {
+        console.error('group.manual-participant-fullname-lookup-error', byFullNameError)
+        return
+      }
+
+      if ((byFullName || []).length === 1 && byFullName?.[0]?.id) {
+        targetUserId = String(byFullName[0].id)
+      }
+    }
+
+    if (!targetUserId) {
+      setReportFeedback({ type: 'error', text: 'Usuário não encontrado. Informe o nome de usuário exato.' })
+      return
+    }
+
     const { error } = await supabase
-      .from('groups')
-      .update({ participants: nextParticipants })
-      .eq('id', group.id)
+      .from('participants')
+      .insert({
+        group_id: group.id,
+        user_id: targetUserId,
+        role: 'member',
+      })
 
-    if (!error) {
-      setManualParticipantName('')
-      setShowParticipantModal(false)
-      await loadGroup()
+    if (error && error.code !== '23505') {
+      console.error('group.manual-participant-insert-error', error)
+      setReportFeedback({ type: 'error', text: 'Erro ao adicionar participante.' })
+      return
     }
+
+    setManualParticipantName('')
+    setShowParticipantModal(false)
+    if (error?.code === '23505') {
+      setReportFeedback({ type: 'error', text: 'Esse usuário já participa do grupo.' })
+    } else {
+      setReportFeedback({ type: 'success', text: 'Participante adicionado com sucesso.' })
+    }
+    await loadGroup()
   }, [group, manualParticipantName, loadGroup])
 
   useEffect(() => {
@@ -662,6 +829,12 @@ export default function GroupPage() {
   const amountPerPerson = group.participants > 0 ? group.totalSpent / group.participants : 0
   const topParticipants = group.participantsList.slice(0, 4)
   const extraParticipants = Math.max(0, group.participantsList.length - 4)
+  const settlementProfiles = group.participantsList.map((participant) => ({
+    userId: String(participant.user_id || participant.id),
+    name: participant.name || 'Participante',
+    avatarKey: participant.avatar_key,
+    isPremium: participant.is_premium,
+  }))
 
   return (
     <div className="min-h-screen bg-[#F7F7F7] flex flex-col overflow-x-hidden page-fade">
@@ -973,11 +1146,118 @@ export default function GroupPage() {
                 ) : (
                   <p className="section-subtitle">Disponivel no plano Premium com exportacao CSV/PDF e consolidado por participante.</p>
                 )}
+
+                <div className="border-t border-gray-200 pt-4">
+                  <h4 className="text-sm font-semibold text-gray-800 mb-2">Balanco por pessoa</h4>
+                  {personBalances.length === 0 ? (
+                    <p className="text-sm text-gray-600">Nenhum gasto pendente entre voces.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {personBalances.map((item) => {
+                        const isReceive = item.amountCents > 0
+                        const debtorId = isReceive ? item.userId : String(currentUserId)
+                        const creditorId = isReceive ? String(currentUserId) : item.userId
+                        const debtorName = isReceive ? item.name : 'Voce'
+                        const debtorAvatarKey = isReceive ? item.avatarKey : undefined
+                        const debtorIsPremium = isReceive ? item.isPremium : false
+
+                        return (
+                          <button
+                            key={item.userId}
+                            type="button"
+                            onClick={() =>
+                              setDebtBreakdownTarget({
+                                debtorId,
+                                creditorId,
+                                debtorName,
+                                debtorAvatarKey,
+                                debtorIsPremium,
+                              })
+                            }
+                            className="w-full text-left rounded-lg border border-gray-200 p-3 bg-gray-50 hover:bg-gray-100 tap-target pressable"
+                          >
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <UserAvatar
+                                  name={item.name}
+                                  avatarKey={item.avatarKey}
+                                  isPremium={item.isPremium}
+                                  className="w-8 h-8"
+                                  textClassName="text-xs"
+                                />
+                                <p className="text-sm font-medium text-gray-800 truncate">{item.name}</p>
+                              </div>
+                              <p className={`text-sm font-semibold ${isReceive ? 'text-[#5BC5A7]' : 'text-[#FF6B6B]'}`}>
+                                {showMyBalance
+                                  ? `R$ ${fromCents(Math.abs(item.amountCents)).toFixed(2)} ${isReceive ? 'te deve' : 'voce deve'}`
+                                  : 'Oculto'}
+                              </p>
+                            </div>
+                            <p className="text-xs text-gray-500 mt-1">Toque para ver o detalhamento da divida.</p>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </div>
         </div>
       </div>
+
+      <SuggestedSettlements
+        suggestions={suggestedSettlements}
+        profiles={settlementProfiles}
+        onRegister={handleRegisterSuggestedSettlements}
+        registering={registeringSuggestedSettlements}
+      />
+
+      {!auditReport.valid && (
+        <div className="bg-amber-50 border-b border-amber-200">
+          <div className="max-w-4xl mx-auto px-4 py-3">
+            <div className="rounded-lg border border-amber-200 bg-amber-100/70 p-3">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm text-amber-900">Detectamos inconsistencias financeiras neste grupo.</p>
+                <button
+                  type="button"
+                  onClick={() => setShowAuditIssues((prev) => !prev)}
+                  className="tap-target pressable px-3 py-1.5 text-xs rounded-lg border border-amber-300 text-amber-900 hover:bg-amber-200/60"
+                >
+                  {showAuditIssues ? 'Ocultar relatorio' : 'Ver relatorio'}
+                </button>
+              </div>
+
+              {showAuditIssues && (
+                <div className="mt-3 space-y-2">
+                  {auditReport.issues.map((issue, index) => (
+                    <div key={`${issue.type}-${issue.transactionId || 'no-tx'}-${index}`} className="rounded-md bg-white/80 border border-amber-200 px-3 py-2">
+                      <p className="text-xs font-semibold text-amber-900">{issue.type}</p>
+                      <p className="text-xs text-amber-800">{issue.message}</p>
+                      {issue.transactionId && (
+                        <p className="text-[11px] text-amber-700 mt-0.5">Transacao: {issue.transactionId}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {debtBreakdownTarget && (
+        <DebtBreakdownModal
+          open={Boolean(debtBreakdownTarget)}
+          onClose={() => setDebtBreakdownTarget(null)}
+          debtorId={debtBreakdownTarget.debtorId}
+          creditorId={debtBreakdownTarget.creditorId}
+          groupId={groupId}
+          debtorName={debtBreakdownTarget.debtorName}
+          debtorAvatarKey={debtBreakdownTarget.debtorAvatarKey}
+          debtorIsPremium={debtBreakdownTarget.debtorIsPremium}
+        />
+      )}
 
       <main className="flex-1 overflow-y-auto max-w-4xl w-full mx-auto px-4 py-6 pb-[calc(8rem+env(safe-area-inset-bottom))]">
         {group.transactions.length === 0 ? (
