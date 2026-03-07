@@ -10,6 +10,7 @@ import { fetchGroupMembersMap } from '@/lib/group-members'
 import UserAvatar from '@/components/user-avatar'
 import { computePendingEdges } from '@/lib/pending-balances'
 import { fromCents, toCents } from '@/lib/money'
+import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
 
 interface GroupRow {
   id: string
@@ -309,6 +310,12 @@ export default function Payments() {
     if (!myId || pending.status !== 'pending') return
     if (pending.toUserId !== myId) {
       setFeedback({ type: 'error', text: 'Apenas o credor pode marcar como pago.' })
+      return
+    }
+
+    const allowed = checkRateLimit(myId, 'registerPayment', RATE_LIMITS.registerPayment)
+    if (!allowed) {
+      setFeedback({ type: 'error', text: 'Muitas ações em pouco tempo. Tente novamente.' })
       return
     }
 

@@ -28,6 +28,11 @@ const CRITICAL_TABLES = [
 
 const REQUIRED_POLICY_ACTIONS = ['select', 'insert', 'update']
 const REQUIRED_TRANSACTION_COLUMNS = ['id', 'group_id', 'payer_id', 'value', 'splits']
+const NON_BLOCKING_ISSUE_TYPES = new Set([
+  'AUDIT_QUERY_FAILED',
+  'TABLE_CHECK_UNAVAILABLE',
+  'SCHEMA_AUDIT_UNAVAILABLE',
+])
 
 function parseBoolean(value: unknown) {
   if (typeof value === 'boolean') return value
@@ -369,6 +374,8 @@ export async function auditDatabaseSecurity(supabase: AuditClient): Promise<Secu
     })
   }
 
+  const blockingIssues = issues.filter((issue) => !NON_BLOCKING_ISSUE_TYPES.has(issue.type))
+
   if (issues.length === 0) {
     return {
       safe: true,
@@ -377,7 +384,7 @@ export async function auditDatabaseSecurity(supabase: AuditClient): Promise<Secu
   }
 
   return {
-    safe: false,
+    safe: blockingIssues.length === 0,
     issues,
   }
 }

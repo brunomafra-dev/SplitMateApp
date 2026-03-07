@@ -9,6 +9,7 @@ import BottomNav from '@/components/ui/bottom-nav'
 import UserAvatar from '@/components/user-avatar'
 import { sanitizeMoney } from '@/lib/money'
 import { buildEqualSplits, buildWeightedSplits } from '@/lib/transaction-splits'
+import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
 
 interface Participant {
   id: string
@@ -197,6 +198,22 @@ export default function AddExpense() {
 
     setSaving(true)
     setFeedback(null)
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+    if (!user) {
+      setSaving(false)
+      setFeedback({ type: 'error', text: 'Usuario nao autenticado.' })
+      return
+    }
+
+    const allowed = checkRateLimit(user.id, 'createExpense', RATE_LIMITS.createExpense)
+    if (!allowed) {
+      setSaving(false)
+      setFeedback({ type: 'error', text: 'Muitas ações em pouco tempo. Tente novamente.' })
+      return
+    }
 
     const normalizedAmountValue = sanitizeMoney(amountValue)
 

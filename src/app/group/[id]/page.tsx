@@ -16,6 +16,7 @@ import SuggestedSettlements from '@/components/group/suggested-settlements'
 import { buildBalancesFromEdges, simplifyDebts, type SimplifiedPayment } from '@/lib/debt-simplifier'
 import DebtBreakdownModal from '@/components/debt/debt-breakdown-modal'
 import { auditGroupFinancialIntegrity, type FinancialAuditReport } from '@/lib/financial-audit'
+import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
 
 interface Participant {
   id: string
@@ -500,6 +501,12 @@ export default function GroupPage() {
   const handleCreateInvite = useCallback(async () => {
     if (!currentUserId || !group) return
 
+    const allowed = checkRateLimit(currentUserId, 'createInvite', RATE_LIMITS.createInvite)
+    if (!allowed) {
+      setReportFeedback({ type: 'error', text: 'Muitas ações em pouco tempo. Tente novamente.' })
+      return
+    }
+
     setInviteLoading(true)
     try {
       const token = generateSecureInviteToken()
@@ -630,7 +637,13 @@ export default function GroupPage() {
   }, [group, report])
 
   const handleRegisterSuggestedSettlements = useCallback(async () => {
-    if (!group || suggestedSettlements.length === 0) return
+    if (!group || suggestedSettlements.length === 0 || !currentUserId) return
+
+    const allowed = checkRateLimit(currentUserId, 'registerPayment', RATE_LIMITS.registerPayment)
+    if (!allowed) {
+      setReportFeedback({ type: 'error', text: 'Muitas ações em pouco tempo. Tente novamente.' })
+      return
+    }
 
     setRegisteringSuggestedSettlements(true)
     setReportFeedback(null)
@@ -671,7 +684,7 @@ export default function GroupPage() {
 
     await loadGroup()
     setRegisteringSuggestedSettlements(false)
-  }, [group, suggestedSettlements, loadGroup])
+  }, [group, suggestedSettlements, loadGroup, currentUserId])
 
   const handleAddManualParticipant = useCallback(async () => {
     if (!group || !manualParticipantName.trim()) return

@@ -10,6 +10,7 @@ import { generateSecureInviteToken } from '@/lib/invites'
 import { buildInviteLink } from '@/lib/site-url'
 import BottomNav from '@/components/ui/bottom-nav'
 import { fetchGroupQuota, type GroupQuota } from '@/lib/group-quota'
+import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
 
 type Category = 'apartment' | 'house' | 'trip' | 'other'
 
@@ -84,6 +85,12 @@ export default function CreateGroup() {
           type: 'error',
           text: `Plano Free permite ate ${currentQuota.freeLimit} grupos. Faca upgrade para Premium para criar grupos ilimitados.`,
         })
+        return
+      }
+
+      const allowed = checkRateLimit(user.id, 'createGroup', RATE_LIMITS.createGroup)
+      if (!allowed) {
+        setFeedback({ type: 'error', text: 'Muitas ações em pouco tempo. Tente novamente.' })
         return
       }
 

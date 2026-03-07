@@ -93,7 +93,9 @@ export function auditGroupFinancialIntegrity(
       })
     }
 
-    if (Array.isArray(tx.participants) && tx.participants.length === 0) {
+    // Legacy rows may have empty `participants` snapshot but valid `splits`.
+    // Flag only when both participants and splits are effectively empty.
+    if (Array.isArray(tx.participants) && tx.participants.length === 0 && splitEntries.length === 0) {
       issues.push({
         type: 'EMPTY_PARTICIPANTS',
         message: 'Transacao nao possui participantes',
