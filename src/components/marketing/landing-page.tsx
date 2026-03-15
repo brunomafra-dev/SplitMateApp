@@ -25,26 +25,26 @@ const heroSnapshots: HeroSnapshot[] = [
     balance: 'R$ 1.240,50',
     items: [
       { label: 'Hotel', value: 'Te devem R$ 320', tone: 'positive' },
-      { label: 'Mercado', value: 'VocÃª deve R$ 90', tone: 'negative' },
+      { label: 'Mercado', value: 'Você deve R$ 90', tone: 'negative' },
       { label: 'Gasolina', value: 'Te devem R$ 210', tone: 'positive' },
     ],
   },
   {
-    title: 'RepÃºblica Centro',
+    title: 'República Centro',
     balance: 'R$ 782,20',
     items: [
       { label: 'Aluguel', value: 'Te devem R$ 520', tone: 'positive' },
-      { label: 'Internet', value: 'VocÃª deve R$ 48', tone: 'negative' },
+      { label: 'Internet', value: 'Você deve R$ 48', tone: 'negative' },
       { label: 'Energia', value: 'Te devem R$ 102', tone: 'positive' },
     ],
   },
   {
-    title: 'Churrasco sÃ¡bado',
+    title: 'Churrasco sábado',
     balance: 'R$ 436,80',
     items: [
       { label: 'Carnes', value: 'Te devem R$ 188', tone: 'positive' },
-      { label: 'Bebidas', value: 'VocÃª deve R$ 36', tone: 'negative' },
-      { label: 'CarvÃ£o', value: 'Te devem R$ 74', tone: 'positive' },
+      { label: 'Bebidas', value: 'Você deve R$ 36', tone: 'negative' },
+      { label: 'Carvão', value: 'Te devem R$ 74', tone: 'positive' },
     ],
   },
 ]
@@ -53,7 +53,7 @@ const painItems = [
   'Conta do bar com amigos',
   'Mercado da casa',
   'Viagem em grupo',
-  'DivisÃ£o de aluguel',
+  'Divisão de aluguel',
 ]
 
 const steps = [
@@ -66,7 +66,7 @@ const steps = [
     text: 'Registre cada gasto com pagador e participantes do rateio.',
   },
   {
-    title: 'Resolver pendÃªncias',
+    title: 'Resolver pendências',
     text: 'Veja o saldo por pessoa e marque pagamentos no fluxo real.',
   },
 ]
@@ -75,39 +75,39 @@ const featureCards = [
   {
     icon: Users,
     title: 'Fluxo colaborativo',
-    text: 'Todos enxergam o mesmo estado do grupo com atualizaÃ§Ã£o rÃ¡pida.',
+    text: 'Todos enxergam o mesmo estado do grupo com atualização rápida.',
   },
   {
     icon: BarChart3,
-    title: 'VisÃ£o financeira clara',
-    text: 'A receber, a pagar e balanÃ§o por pessoa sem confusÃ£o.',
+    title: 'Visão financeira clara',
+    text: 'A receber, a pagar e balanço por pessoa sem confusão.',
   },
   {
     icon: ShieldCheck,
-    title: 'Controle e seguranÃ§a',
-    text: 'Regras de acesso e permissÃµes por usuÃ¡rio no banco de dados.',
+    title: 'Controle e segurança',
+    text: 'Regras de acesso e permissões por usuário no banco de dados.',
   },
   {
     icon: Sparkles,
     title: 'Interface mobile-first',
-    text: 'Pensado para uso no celular com navegaÃ§Ã£o rÃ¡pida e fluida.',
+    text: 'Pensado para uso no celular com navegação rápida e fluida.',
   },
 ]
 
 const testimonials = [
   {
     name: 'Bruno M.',
-    role: 'UsuÃ¡rio SplitMate',
-    text: 'Antes era planilha e confusÃ£o. Agora o fechamento do grupo acontece no mesmo dia.',
+    role: 'Usuário SplitMate',
+    text: 'Antes era planilha e confusão. Agora o fechamento do grupo acontece no mesmo dia.',
   },
   {
     name: 'Larissa C.',
-    role: 'UsuÃ¡ria SplitMate',
-    text: 'A visualizaÃ§Ã£o por pessoa deixou claro quem deve para quem, sem desgaste.',
+    role: 'Usuária SplitMate',
+    text: 'A visualização por pessoa deixou claro quem deve para quem, sem desgaste.',
   },
   {
     name: 'Carlos P.',
-    role: 'UsuÃ¡rio SplitMate',
+    role: 'Usuário SplitMate',
     text: 'A tela de pagamentos ficou objetiva e os lembretes ajudam muito no fluxo.',
   },
 ]
@@ -148,13 +148,13 @@ export default function LandingPage() {
 
           <nav className="hidden md:flex items-center gap-6 text-sm text-gray-600">
             <a href="#como-funciona" className="hover:text-gray-900 transition-colors">Como funciona</a>
-            <a href="#beneficios" className="hover:text-gray-900 transition-colors">BenefÃ­cios</a>
+            <a href="#beneficios" className="hover:text-gray-900 transition-colors">Benefícios</a>
             <a href="#download" className="hover:text-gray-900 transition-colors">Download</a>
           </nav>
 
           <div className="flex items-center gap-2">
             <Link href="/login" className="px-3 py-2 text-sm rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors">
-              JÃ¡ tem conta? Entrar
+              Já tem conta? Entrar
             </Link>
             <Link href="/download" className="px-4 py-2 text-sm rounded-lg bg-[#5BC5A7] text-white hover:bg-[#4AB396] transition-colors shadow-sm">
               Baixar app
@@ -168,37 +168,37 @@ export default function LandingPage() {
           <div className="max-w-2xl">
             <span className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700 mb-4">
               <Sparkles className="w-3.5 h-3.5" />
-              OrganizaÃ§Ã£o financeira sem fricÃ§Ã£o
+              Organização financeira sem fricção
             </span>
 
             <h1 className="text-4xl sm:text-5xl font-bold leading-tight text-balance">
-              Divida despesas em grupo com clareza e sem discussÃ£o.
+              Divida despesas em grupo com clareza e sem discussão.
             </h1>
 
             <p className="mt-4 text-lg text-gray-600 max-w-xl">
-              Registre gastos, acompanhe saldos por pessoa e resolva pendÃªncias com um fluxo objetivo no celular.
+              Registre gastos, acompanhe saldos por pessoa e resolva pendências com um fluxo objetivo no celular.
             </p>
 
             <div className="mt-8 flex flex-wrap gap-3">
               <StoreBadge
                 href="/android"
                 platform="android"
-                subtitle="DisponÃ­vel para"
-                title="Google Play Â· Android"
+                subtitle="Disponível para"
+                title="Google Play · Android"
               />
               <StoreBadge
                 href="/ios"
                 platform="ios"
                 subtitle="Use agora no"
-                title="Apple Â· iPhone"
+                title="Apple · iPhone"
               />
             </div>
 
             <div className="mt-7 flex items-center gap-2 text-sm text-gray-600">
               <Star className="w-4 h-4 text-amber-400 fill-amber-400" />
-              <span className="font-semibold text-gray-800">4.9 de satisfaÃ§Ã£o</span>
-              <span>â€¢</span>
-              <span>Ideal para amigos, casais e repÃºblicas</span>
+              <span className="font-semibold text-gray-800">4.9 de satisfação</span>
+              <span>•</span>
+              <span>Ideal para amigos, casais e repúblicas</span>
             </div>
 
             <div className="mt-5 grid grid-cols-3 gap-2 max-w-xl">
@@ -211,7 +211,7 @@ export default function LandingPage() {
                 <p className="text-sm font-semibold text-gray-900">Otimizado</p>
               </div>
               <div className="rounded-lg border border-gray-200 bg-white/90 px-3 py-2">
-                <p className="text-[11px] text-gray-500">DivisÃ£o</p>
+                <p className="text-[11px] text-gray-500">Divisão</p>
                 <p className="text-sm font-semibold text-gray-900">Em tempo real</p>
               </div>
             </div>
@@ -254,12 +254,12 @@ export default function LandingPage() {
         </section>
 
         <section className="mx-auto max-w-6xl px-4 py-10">
-          <h2 className="text-2xl font-semibold">Dores comuns, resolvidas em um sÃ³ lugar</h2>
+          <h2 className="text-2xl font-semibold">Dores comuns, resolvidas em um só lugar</h2>
           <div className="mt-4 grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
             {painItems.map((item) => (
               <div key={item} className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm hover:shadow-md transition-shadow">
                 <p className="font-medium">{item}</p>
-                <p className="mt-1 text-sm text-gray-600">Sem planilha, sem mensagem perdida e sem dÃºvida no fechamento.</p>
+                <p className="mt-1 text-sm text-gray-600">Sem planilha, sem mensagem perdida e sem dúvida no fechamento.</p>
               </div>
             ))}
           </div>
@@ -304,7 +304,7 @@ export default function LandingPage() {
             {testimonials.map((item) => (
               <div key={item.name} className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
                 <Quote className="w-4 h-4 text-emerald-500" />
-                <p className="text-sm text-gray-700 mt-2">â€œ{item.text}â€</p>
+                <p className="text-sm text-gray-700 mt-2">“{item.text}”</p>
                 <p className="mt-3 text-sm font-semibold text-gray-900">{item.name}</p>
                 <p className="text-xs text-gray-500">{item.role}</p>
               </div>
@@ -316,7 +316,7 @@ export default function LandingPage() {
           <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-6 sm:p-8">
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-5">
               <div>
-                <h2 className="text-2xl font-semibold">Pronto para dividir contas sem dor de cabeÃ§a?</h2>
+                <h2 className="text-2xl font-semibold">Pronto para dividir contas sem dor de cabeça?</h2>
                 <p className="mt-1 text-sm text-gray-700">Escolha sua plataforma e comece hoje.</p>
               </div>
               <div className="flex gap-2 flex-wrap">
@@ -324,13 +324,13 @@ export default function LandingPage() {
                   href="/android"
                   platform="android"
                   subtitle="Baixe para"
-                  title="Google Play Â· Android"
+                  title="Google Play · Android"
                 />
                 <StoreBadge
                   href="/ios"
                   platform="ios"
                   subtitle="Use no"
-                  title="Apple Â· iPhone"
+                  title="Apple · iPhone"
                 />
               </div>
             </div>
@@ -355,9 +355,9 @@ export default function LandingPage() {
 
       <footer className="border-t border-gray-200 bg-white">
         <div className="mx-auto max-w-6xl px-4 py-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-sm text-gray-600">
-          <p>Â© {new Date().getFullYear()} SplitMate. Todos os direitos reservados.</p>
+          <p>© {new Date().getFullYear()} SplitMate. Todos os direitos reservados.</p>
           <div className="flex items-center gap-4">
-            <Link href="/privacy" className="hover:text-gray-900">PolÃ­tica de Privacidade</Link>
+            <Link href="/privacy" className="hover:text-gray-900">Política de Privacidade</Link>
             <Link href="/terms" className="hover:text-gray-900">Termos de Uso</Link>
           </div>
         </div>
@@ -365,4 +365,6 @@ export default function LandingPage() {
     </div>
   )
 }
+
+
 

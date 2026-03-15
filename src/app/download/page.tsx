@@ -19,29 +19,30 @@ export default function DownloadPage() {
             <StoreBadge
               href="/android"
               platform="android"
-              subtitle="DisponÃ­vel para"
-              title="Google Play Â· Android"
+              subtitle="Disponível para"
+              title="Google Play · Android"
             />
             <StoreBadge
               href="/ios"
               platform="ios"
               subtitle="Use agora no"
-              title="Apple Â· iPhone"
+              title="Apple · iPhone"
             />
           </div>
 
           <p className="mt-5 text-sm text-gray-600">
-            Android via APK oficial. iPhone via Web App com instalaÃ§Ã£o pela tela inicial.
+            Android via APK oficial. iPhone via Web App com instalação pela tela inicial.
           </p>
         </div>
 
         <div className="mt-4">
           <Link href="/" className="text-sm text-gray-600 hover:text-gray-900">
-            Voltar para a pÃ¡gina inicial
+            Voltar para a página inicial
           </Link>
         </div>
       </main>
     </div>
   )
 }
+
 
