@@ -79,6 +79,7 @@ export default function Home() {
   const router = useRouter()
   const { isPremium } = usePremium()
   const { user, loading: authLoading } = useAuth()
+  const [isNativeContainer, setIsNativeContainer] = useState(false)
   const [groups, setGroups] = useState<GroupUI[]>(() => homeViewCache?.groups || [])
   const [totalBalance, setTotalBalance] = useState(() => homeViewCache?.totalBalance || 0)
   const [loading, setLoading] = useState(() => !homeViewCache)
@@ -94,6 +95,20 @@ export default function Home() {
   const securityAuditRanRef = useRef(false)
   const runInFlightRef = useRef(false)
   const rerunRequestedRef = useRef(false)
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const ua = navigator.userAgent || ''
+    const standalone = window.matchMedia?.('(display-mode: standalone)').matches
+    const isNative = /Capacitor|wv|Android.*Version\/[\d.]+/i.test(ua)
+    setIsNativeContainer(Boolean(isNative && !standalone))
+  }, [])
+
+  useEffect(() => {
+    if (!authLoading && !user && isNativeContainer) {
+      router.replace('/login')
+    }
+  }, [authLoading, isNativeContainer, router, user])
 
   const renderMemberAvatars = (members?: Member[], maxDisplay: number = 4) => {
     if (!members || members.length === 0) return null
@@ -357,6 +372,14 @@ export default function Home() {
       document.removeEventListener('visibilitychange', onVisibilityChange)
     }
   }, [authLoading, router, user?.id])
+
+  if (!authLoading && !user && isNativeContainer) {
+    return (
+      <div className="min-h-screen bg-[#F7F7F7] flex items-center justify-center">
+        <div className="h-8 w-8 rounded-full border-2 border-gray-300 border-t-[#5BC5A7] animate-spin" aria-label="Carregando" />
+      </div>
+    )
+  }
 
   if (!authLoading && !user) {
     return <LandingPage />
