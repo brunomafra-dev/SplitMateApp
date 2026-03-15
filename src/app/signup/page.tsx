@@ -7,6 +7,7 @@ import { Eye, EyeOff, Mail, Lock, User, AtSign } from 'lucide-react'
 import { getAuthRedirectUrl } from '@/lib/site-url'
 import { ensureProfileForUser, savePendingProfileSeed } from '@/lib/profiles'
 import LegalDocModal from '@/components/legal-doc-modal'
+import AppBrand from '@/components/app-brand'
 
 function normalizeUsername(raw: string) {
   return raw
@@ -33,7 +34,6 @@ export default function SignUpPage() {
   const [privacyViewed, setPrivacyViewed] = useState(false)
   const [acceptedLegal, setAcceptedLegal] = useState(false)
   const [legalModal, setLegalModal] = useState<'terms' | 'privacy' | null>(null)
-  const [showBrandLogo, setShowBrandLogo] = useState(true)
 
   const checkUsernameAvailability = async (rawValue?: string) => {
     const candidate = normalizeUsername(rawValue ?? username)
@@ -181,19 +181,11 @@ export default function SignUpPage() {
     <div className="min-h-screen bg-gradient-to-br from-[#5BC5A7] to-[#4AB396] flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          {showBrandLogo ? (
-            <img
-              src="/logo/splitmate-logo.svg"
-              alt="SplitMate"
-              className="h-12 w-auto mx-auto mb-2"
-              onError={() => setShowBrandLogo(false)}
-            />
-          ) : (
-            <h1 className="text-4xl font-bold text-white mb-2">SplitMate</h1>
-          )}
+          <div className="inline-flex items-center justify-center mb-2">
+            <AppBrand textClassName="text-3xl font-bold text-white" iconClassName="w-8 h-8" />
+          </div>
           <p className="text-white/90 text-lg">Divida gastos com facilidade</p>
         </div>
-
         <div className="bg-white rounded-2xl shadow-2xl p-8">
           <h2 className="text-2xl font-bold text-gray-800 mb-6 text-center">Criar Conta</h2>
 
@@ -406,6 +398,9 @@ export default function SignUpPage() {
     </div>
   )
 }
+
+
+
 
 
 
