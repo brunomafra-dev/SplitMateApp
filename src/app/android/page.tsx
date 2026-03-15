@@ -1,4 +1,4 @@
-﻿import type { Metadata } from 'next'
+import type { Metadata } from 'next'
 import StoreBadge from '@/components/marketing/store-badge'
 
 export const metadata: Metadata = {
@@ -17,14 +17,14 @@ export default function AndroidPage() {
 
         <div className="mt-8 rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
           <StoreBadge
-            href="/apk/splitmate-beta.apk"
+            href="/apk/SplitMate.apk"
             platform="android"
             subtitle="Baixar agora"
             title="Google Play · Android"
             className="w-full sm:w-auto"
           />
           <p className="mt-4 text-sm text-gray-600">
-            Arquivo oficial: <span className="font-medium text-gray-800">splitmate-beta.apk</span>
+            Arquivo oficial: <span className="font-medium text-gray-800">SplitMate.apk</span>
           </p>
         </div>
       </main>

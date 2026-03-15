@@ -1,4 +1,4 @@
-type AppBrandProps = {
+﻿type AppBrandProps = {
   className?: string
   iconClassName?: string
   textClassName?: string
@@ -11,8 +11,9 @@ export default function AppBrand({
 }: AppBrandProps) {
   return (
     <div className={`flex items-center gap-2 ${className}`}>
-      <img src="/logo/SplitMate-icon.png" alt="SplitMate" className={`${iconClassName} object-contain`} />
+      <img src="/logo/splitmate-icon.png" alt="SplitMate" className={`${iconClassName} object-contain`} />
       <span className={textClassName}>SplitMate</span>
     </div>
   )
 }
+

@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
@@ -85,13 +85,13 @@ export default function SignUpPage() {
 
     const available = await checkUsernameAvailability(cleanUsername)
     if (!available) {
-      setError('Esse nome de usuário ja esta em uso. Escolha outro.')
+      setError('Esse nome de usuÃ¡rio ja esta em uso. Escolha outro.')
       setLoading(false)
       return
     }
 
     if (password !== confirmPassword) {
-      setError('As senhas Não coincidem')
+      setError('As senhas NÃ£o coincidem')
       setLoading(false)
       return
     }
@@ -103,7 +103,7 @@ export default function SignUpPage() {
     }
 
     if (!acceptedLegal) {
-      setError('Você precisa aceitar os Termos de Uso e a Política de Privacidade.')
+      setError('VocÃª precisa aceitar os Termos de Uso e a PolÃ­tica de Privacidade.')
       setLoading(false)
       return
     }
@@ -124,7 +124,7 @@ export default function SignUpPage() {
       })
 
       if (signUpError) throw signUpError
-      if (!data.user) throw new Error('Não foi possivel criar usuário')
+      if (!data.user) throw new Error('NÃ£o foi possivel criar usuÃ¡rio')
 
       savePendingProfileSeed({
         userId: data.user.id,
@@ -183,7 +183,7 @@ export default function SignUpPage() {
         <div className="text-center mb-8">
           {showBrandLogo ? (
             <img
-              src="/logo/SplitMate-logo.svg"
+              src="/logo/splitmate-logo.svg"
               alt="SplitMate"
               className="h-12 w-auto mx-auto mb-2"
               onError={() => setShowBrandLogo(false)}
@@ -242,7 +242,7 @@ export default function SignUpPage() {
 
             <div>
               <label htmlFor="username" className="block text-sm font-medium text-gray-700 mb-2">
-                Nome de usuário
+                Nome de usuÃ¡rio
               </label>
               <div className="relative">
                 <AtSign className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
@@ -268,9 +268,9 @@ export default function SignUpPage() {
                 {checkingUsername
                   ? 'Verificando disponibilidade...'
                   : usernameStatus === 'available'
-                    ? 'Nome de usuário disponivel'
+                    ? 'Nome de usuÃ¡rio disponivel'
                     : usernameStatus === 'taken'
-                      ? 'Nome de usuário indisponivel'
+                      ? 'Nome de usuÃ¡rio indisponivel'
                       : 'Use letras, numeros e underscore'}
               </p>
             </div>
@@ -346,7 +346,7 @@ export default function SignUpPage() {
                 onClick={() => setLegalModal('privacy')}
                 className="ml-3 text-sm text-[#5BC5A7] underline"
               >
-                Ler Política de Privacidade
+                Ler PolÃ­tica de Privacidade
               </button>
               <label className="flex items-start gap-2 text-sm text-gray-700">
                 <input
@@ -355,17 +355,17 @@ export default function SignUpPage() {
                   disabled={!termsViewed || !privacyViewed}
                   onChange={(e) => {
                     if (!termsViewed || !privacyViewed) {
-                      setError('Leia os Termos e a Política antes de aceitar.')
+                      setError('Leia os Termos e a PolÃ­tica antes de aceitar.')
                       return
                     }
                     setAcceptedLegal(e.target.checked)
                   }}
                   className="mt-1"
                 />
-                <span>Li e aceito os Termos de Uso e a Política de Privacidade</span>
+                <span>Li e aceito os Termos de Uso e a PolÃ­tica de Privacidade</span>
               </label>
               {(!termsViewed || !privacyViewed) && (
-                <p className="text-xs text-gray-500">Você precisa abrir e ler os dois documentos para habilitar o aceite.</p>
+                <p className="text-xs text-gray-500">VocÃª precisa abrir e ler os dois documentos para habilitar o aceite.</p>
               )}
             </div>
           </form>
@@ -390,7 +390,7 @@ export default function SignUpPage() {
         </div>
 
         <p className="text-center text-white/80 text-sm mt-6">
-          Ao continuar, Você concorda com nossos Termos de Uso
+          Ao continuar, VocÃª concorda com nossos Termos de Uso
         </p>
       </div>
 
@@ -406,4 +406,5 @@ export default function SignUpPage() {
     </div>
   )
 }
+
 
