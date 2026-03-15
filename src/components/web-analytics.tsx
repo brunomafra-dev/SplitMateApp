@@ -9,7 +9,7 @@ export default function WebAnalytics() {
   return (
     <>
       <Script src={`https://www.googletagmanager.com/gtag/js?id=${gaId}`} strategy="afterInteractive" />
-      <Script id="divideai-ga" strategy="afterInteractive">
+      <Script id="SplitMate-ga" strategy="afterInteractive">
         {`
           window.dataLayer = window.dataLayer || [];
           function gtag(){dataLayer.push(arguments);}

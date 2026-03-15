@@ -1,6 +1,6 @@
 'use client'
 
-const LEGAL_CONSENT_PREFIX = 'divideai_legal_consent_v1'
+const LEGAL_CONSENT_PREFIX = 'SplitMate_legal_consent_v1'
 
 export function getLegalConsentKey(userId: string) {
   return `${LEGAL_CONSENT_PREFIX}:${userId}`

@@ -33,7 +33,7 @@ export default function PremiumPage() {
         <div className="surface-card p-6 dark:bg-neutral-900 dark:border-neutral-800">
           <div className="flex items-center gap-3 mb-4">
             <Crown className="w-7 h-7 text-[#5BC5A7]" />
-            <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">✨ DivideAI Premium</h2>
+            <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">✨ SplitMate Premium</h2>
           </div>
 
           <ul className="space-y-2 text-sm text-gray-700 dark:text-gray-200 mb-6">
@@ -116,7 +116,7 @@ export default function PremiumPage() {
       {showActivationInfoModal && (
         <div className="fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center px-4 pt-4 pb-[calc(6.5rem+env(safe-area-inset-bottom))] sm:p-4">
           <div className="bg-white dark:bg-neutral-900 w-full max-w-sm rounded-2xl shadow-xl p-5">
-            <p className="text-base font-semibold text-gray-900 dark:text-gray-100 mb-2">DivideAI Premium</p>
+            <p className="text-base font-semibold text-gray-900 dark:text-gray-100 mb-2">SplitMate Premium</p>
             <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
               A ativação da assinatura estará disponível quando o aplicativo for publicado na loja.
             </p>

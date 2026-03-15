@@ -22,7 +22,7 @@ export default function WebAdSense() {
 
   return (
     <Script
-      id="divideai-adsense"
+      id="SplitMate-adsense"
       async
       strategy="afterInteractive"
       crossOrigin="anonymous"

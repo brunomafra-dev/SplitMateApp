@@ -4,9 +4,9 @@ import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/context/AuthContext'
 
-const DEV_PREMIUM_KEY = 'divideai_dev_premium'
-const DB_PREMIUM_KEY = 'divideai_is_premium'
-const PREMIUM_SYNC_EVENT = 'divideai:premium-sync'
+const DEV_PREMIUM_KEY = 'SplitMate_dev_premium'
+const DB_PREMIUM_KEY = 'SplitMate_is_premium'
+const PREMIUM_SYNC_EVENT = 'SplitMate:premium-sync'
 type DevPremiumOverride = 'true' | 'false' | null
 
 export function usePremium() {

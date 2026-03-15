@@ -14,13 +14,13 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     }
 
     // Verificar se usuário está logado
-    const isLoggedIn = localStorage.getItem('divideai_logged_in')
-    const keepLoggedIn = localStorage.getItem('divideai_keep_logged_in')
+    const isLoggedIn = localStorage.getItem('SplitMate_logged_in')
+    const keepLoggedIn = localStorage.getItem('SplitMate_keep_logged_in')
 
     // Se não está logado OU não marcou "manter logado"
     if (isLoggedIn !== 'true' || keepLoggedIn !== 'true') {
       // Limpar dados de sessão
-      localStorage.removeItem('divideai_logged_in')
+      localStorage.removeItem('SplitMate_logged_in')
       
       // Redirecionar para login
       router.push('/login')

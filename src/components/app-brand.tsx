@@ -11,8 +11,8 @@ export default function AppBrand({
 }: AppBrandProps) {
   return (
     <div className={`flex items-center gap-2 ${className}`}>
-      <img src="/logo/divideai-icon.png" alt="DivideAI" className={`${iconClassName} object-contain`} />
-      <span className={textClassName}>DivideAI</span>
+      <img src="/logo/SplitMate-icon.png" alt="SplitMate" className={`${iconClassName} object-contain`} />
+      <span className={textClassName}>SplitMate</span>
     </div>
   )
 }

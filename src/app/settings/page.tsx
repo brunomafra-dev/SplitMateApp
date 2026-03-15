@@ -1,4 +1,4 @@
-﻿'use client'
+'use client'
 
 import { ArrowLeft, Crown, ChevronRight } from 'lucide-react'
 import Link from 'next/link'
@@ -78,7 +78,7 @@ export default function Settings() {
         <div className="bg-gradient-to-br from-[#5BC5A7] to-[#4AB396] rounded-xl p-6 shadow-lg text-white">
           <div className="flex items-center gap-3 mb-3">
             <Crown className="w-8 h-8" />
-            <h2 className="text-2xl font-bold">Divide Ai Premium</h2>
+            <h2 className="text-2xl font-bold">SplitMate Premium</h2>
           </div>
           <p className="text-white/90 mb-4">Plano atual: {isPremium ? 'Premium' : 'Free'}</p>
           <Link href="/premium">

@@ -1,4 +1,4 @@
-﻿'use client'
+'use client'
 
 import Link from 'next/link'
 import {
@@ -97,17 +97,17 @@ const featureCards = [
 const testimonials = [
   {
     name: 'Bruno M.',
-    role: 'Usuário DivideAI',
+    role: 'Usuário SplitMate',
     text: 'Antes era planilha e confusão. Agora o fechamento do grupo acontece no mesmo dia.',
   },
   {
     name: 'Larissa C.',
-    role: 'Usuária DivideAI',
+    role: 'Usuária SplitMate',
     text: 'A visualização por pessoa deixou claro quem deve para quem, sem desgaste.',
   },
   {
     name: 'Carlos P.',
-    role: 'Usuário DivideAI',
+    role: 'Usuário SplitMate',
     text: 'A tela de pagamentos ficou objetiva e os lembretes ajudam muito no fluxo.',
   },
 ]
@@ -142,8 +142,8 @@ export default function LandingPage() {
       <header className="sticky top-0 z-30 border-b border-emerald-100/70 bg-white/82 backdrop-blur-md">
         <div className="mx-auto max-w-6xl px-4 py-4 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-3">
-            <img src="/logo/divideai-icon.png" alt="DivideAI" className="w-8 h-8 rounded-lg shadow-sm" />
-            <span className="font-semibold text-lg tracking-tight">DivideAI</span>
+            <img src="/logo/SplitMate-icon.png" alt="SplitMate" className="w-8 h-8 rounded-lg shadow-sm" />
+            <span className="font-semibold text-lg tracking-tight">SplitMate</span>
           </Link>
 
           <nav className="hidden md:flex items-center gap-6 text-sm text-gray-600">
@@ -281,7 +281,7 @@ export default function LandingPage() {
         </section>
 
         <section id="beneficios" className="mx-auto max-w-6xl px-4 py-10">
-          <h2 className="text-2xl font-semibold">Por que o DivideAI</h2>
+          <h2 className="text-2xl font-semibold">Por que o SplitMate</h2>
           <div className="mt-4 grid md:grid-cols-2 gap-3">
             {featureCards.map((item) => {
               const Icon = item.icon
@@ -355,7 +355,7 @@ export default function LandingPage() {
 
       <footer className="border-t border-gray-200 bg-white">
         <div className="mx-auto max-w-6xl px-4 py-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-sm text-gray-600">
-          <p>© {new Date().getFullYear()} DivideAI. Todos os direitos reservados.</p>
+          <p>© {new Date().getFullYear()} SplitMate. Todos os direitos reservados.</p>
           <div className="flex items-center gap-4">
             <Link href="/privacy" className="hover:text-gray-900">Política de Privacidade</Link>
             <Link href="/terms" className="hover:text-gray-900">Termos de Uso</Link>

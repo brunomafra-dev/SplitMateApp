@@ -17,17 +17,17 @@ const geistMono = Geist_Mono({
 })
 
 export const metadata: Metadata = {
-  title: "DivideAI - Divida gastos com facilidade",
+  title: "SplitMate - Divida gastos com facilidade",
   description: "Organize e divida gastos entre amigos, casais e grupos.",
-  applicationName: "DivideAI",
+  applicationName: "SplitMate",
   manifest: "/manifest.webmanifest",
   keywords: ["dividir contas", "dividir despesas", "dividir gastos", "split bill", "controle de gastos em grupo"],
   icons: {
     icon: [
       { url: "/favicon.ico" },
-      { url: "/logo/divideai-icon.png", type: "image/png", sizes: "512x512" },
+      { url: "/logo/splitmate-icon.png", type: "image/png", sizes: "512x512" },
     ],
-    apple: [{ url: "/logo/divideai-icon.png", sizes: "180x180", type: "image/png" }],
+    apple: [{ url: "/logo/splitmate-icon.png", sizes: "180x180", type: "image/png" }],
     shortcut: ["/favicon.ico"],
   },
 }
@@ -51,3 +51,4 @@ export default function RootLayout({
     </html>
   )
 }
+

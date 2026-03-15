@@ -1,4 +1,4 @@
-﻿'use client'
+'use client'
 
 import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
@@ -183,13 +183,13 @@ export default function SignUpPage() {
         <div className="text-center mb-8">
           {showBrandLogo ? (
             <img
-              src="/logo/divideai-logo.svg"
-              alt="DivideAI"
+              src="/logo/SplitMate-logo.svg"
+              alt="SplitMate"
               className="h-12 w-auto mx-auto mb-2"
               onError={() => setShowBrandLogo(false)}
             />
           ) : (
-            <h1 className="text-4xl font-bold text-white mb-2">DivideAI</h1>
+            <h1 className="text-4xl font-bold text-white mb-2">SplitMate</h1>
           )}
           <p className="text-white/90 text-lg">Divida gastos com facilidade</p>
         </div>

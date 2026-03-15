@@ -1,9 +1,9 @@
-﻿import type { Metadata } from 'next'
+import type { Metadata } from 'next'
 import StoreBadge from '@/components/marketing/store-badge'
 
 export const metadata: Metadata = {
-  title: 'iPhone | DivideAI',
-  description: 'Instale o DivideAI no iPhone como Web App.',
+  title: 'iPhone | SplitMate',
+  description: 'Instale o SplitMate no iPhone como Web App.',
 }
 
 function SafariStepPreview() {
@@ -43,7 +43,7 @@ export default function IOSPage() {
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_0%_0%,#dcfce7_0%,#f0fdf4_30%,#ffffff_75%)]">
       <main className="max-w-4xl mx-auto px-4 py-10">
-        <h1 className="text-3xl font-bold text-gray-900">Usar o DivideAI no iPhone</h1>
+        <h1 className="text-3xl font-bold text-gray-900">Usar o SplitMate no iPhone</h1>
         <p className="mt-2 text-gray-600">
           Enquanto a versão App Store não é publicada, você pode instalar como Web App em segundos.
         </p>
@@ -56,7 +56,7 @@ export default function IOSPage() {
             <li>Selecione “Adicionar à Tela de Início”.</li>
           </ol>
           <p className="mt-4 text-sm text-gray-600">
-            Depois disso, o DivideAI abre como aplicativo no seu iPhone.
+            Depois disso, o SplitMate abre como aplicativo no seu iPhone.
           </p>
 
           <div className="mt-5">

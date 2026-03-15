@@ -611,7 +611,7 @@ export default function GroupPage() {
     if (!inviteLink) return
     if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
       await navigator.share({
-        title: `Convite - ${group?.name || 'Divide Ai'}`,
+        title: `Convite - ${group?.name || 'SplitMate'}`,
         text: `Entre no grupo ${group?.name || ''}`.trim(),
         url: inviteLink,
       })
@@ -621,7 +621,7 @@ export default function GroupPage() {
   }, [group?.name, handleCopyInviteLink, inviteLink])
 
   const whatsappShareUrl = inviteLink
-    ? `https://wa.me/?text=${encodeURIComponent(`Entre no meu grupo no Divide Ai: ${inviteLink}`)}`
+    ? `https://wa.me/?text=${encodeURIComponent(`Entre no meu grupo no SplitMate: ${inviteLink}`)}`
     : ''
 
   const handleExportCsv = useCallback(() => {
@@ -648,7 +648,7 @@ export default function GroupPage() {
     const url = URL.createObjectURL(blob)
     const anchor = document.createElement('a')
     anchor.href = url
-    anchor.download = `divideai-resumo-${group.name.replace(/\s+/g, '-').toLowerCase()}.csv`
+    anchor.download = `SplitMate-resumo-${group.name.replace(/\s+/g, '-').toLowerCase()}.csv`
     document.body.appendChild(anchor)
     anchor.click()
     document.body.removeChild(anchor)

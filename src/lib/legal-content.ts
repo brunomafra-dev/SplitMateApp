@@ -4,20 +4,20 @@ export type LegalSection = {
   bullets?: string[]
 }
 
-export const termsTitle = 'Termos de Uso — DivideAI'
-export const privacyTitle = 'Política de Privacidade — DivideAI'
+export const termsTitle = 'Termos de Uso — SplitMate'
+export const privacyTitle = 'Política de Privacidade — SplitMate'
 
 export const termsSections: LegalSection[] = [
   {
     title: '1. Aceitação dos Termos',
     paragraphs: [
-      'Ao acessar ou utilizar o aplicativo DivideAI, você concorda com estes Termos de Uso. Caso não concorde com alguma das condições descritas, recomendamos que não utilize o aplicativo.',
+      'Ao acessar ou utilizar o aplicativo SplitMate, você concorda com estes Termos de Uso. Caso não concorde com alguma das condições descritas, recomendamos que não utilize o aplicativo.',
     ],
   },
   {
-    title: '2. Sobre o DivideAI',
+    title: '2. Sobre o SplitMate',
     paragraphs: [
-      'O DivideAI é uma ferramenta criada para ajudar grupos de pessoas a registrar despesas compartilhadas e acompanhar quem deve ou tem valores a receber dentro de um grupo.',
+      'O SplitMate é uma ferramenta criada para ajudar grupos de pessoas a registrar despesas compartilhadas e acompanhar quem deve ou tem valores a receber dentro de um grupo.',
       'O aplicativo tem finalidade organizacional e informativa, facilitando o controle de despesas entre usuários.',
     ],
   },
@@ -26,7 +26,7 @@ export const termsSections: LegalSection[] = [
     paragraphs: [
       'Os registros de despesas, pagamentos e confirmações são feitos pelos próprios usuários.',
       'Cada participante do grupo é responsável por garantir que as informações registradas estejam corretas.',
-      'O DivideAI não intermedia pagamentos e não realiza transferências financeiras entre usuários.',
+      'O SplitMate não intermedia pagamentos e não realiza transferências financeiras entre usuários.',
     ],
   },
   {
@@ -39,7 +39,7 @@ export const termsSections: LegalSection[] = [
   {
     title: '5. Uso Adequado do Serviço',
     paragraphs: [
-      'Ao utilizar o DivideAI, o usuário concorda em:',
+      'Ao utilizar o SplitMate, o usuário concorda em:',
       'O descumprimento dessas regras pode resultar na suspensão ou limitação de acesso ao serviço.',
     ],
     bullets: [
@@ -52,7 +52,7 @@ export const termsSections: LegalSection[] = [
   {
     title: '6. Limitação de Responsabilidade',
     paragraphs: [
-      'O DivideAI não se responsabiliza por disputas financeiras entre usuários.',
+      'O SplitMate não se responsabiliza por disputas financeiras entre usuários.',
       'O aplicativo fornece apenas uma ferramenta para registro e visualização de informações inseridas pelos próprios participantes.',
     ],
   },
@@ -74,7 +74,7 @@ export const privacySections: LegalSection[] = [
   {
     title: '1. Introdução',
     paragraphs: [
-      'Esta Política de Privacidade explica como o DivideAI coleta, utiliza e protege as informações dos usuários ao utilizar o aplicativo.',
+      'Esta Política de Privacidade explica como o SplitMate coleta, utiliza e protege as informações dos usuários ao utilizar o aplicativo.',
       'Nosso objetivo é garantir transparência sobre como os dados são utilizados dentro da plataforma.',
     ],
   },
@@ -109,7 +109,7 @@ export const privacySections: LegalSection[] = [
   {
     title: '4. Compartilhamento de Dados',
     paragraphs: [
-      'O DivideAI não vende nem comercializa dados pessoais dos usuários.',
+      'O SplitMate não vende nem comercializa dados pessoais dos usuários.',
       'As informações registradas em um grupo são visíveis apenas para os participantes daquele grupo.',
     ],
   },

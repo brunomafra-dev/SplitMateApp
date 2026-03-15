@@ -1,4 +1,4 @@
-﻿'use client'
+'use client'
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
@@ -56,7 +56,7 @@ export default function LegalConsentPage() {
     <div className="min-h-screen bg-[#F7F7F7] flex items-center justify-center px-4">
       <div className="surface-card w-full max-w-md p-6 space-y-4">
         <h1 className="text-xl font-semibold text-gray-800">Aceite obrigatório</h1>
-        <p className="text-sm text-gray-600">Para continuar usando o DivideAI, aceite os documentos legais.</p>
+        <p className="text-sm text-gray-600">Para continuar usando o SplitMate, aceite os documentos legais.</p>
 
         <div className="rounded-lg border border-gray-200 p-3 bg-gray-50 space-y-2">
           <button type="button" onClick={() => setLegalModal('terms')} className="text-sm text-[#5BC5A7] underline">

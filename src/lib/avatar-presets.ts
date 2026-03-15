@@ -1,4 +1,4 @@
-﻿export type AvatarPreset = {
+export type AvatarPreset = {
   key: string
   label: string
   style: 'fun-emoji' | 'bottts-neutral' | 'adventurer-neutral'
@@ -7,36 +7,36 @@
 }
 
 export const AVATAR_PRESETS: AvatarPreset[] = [
-  { key: 'neo', label: 'Neo', style: 'fun-emoji', seed: 'divideai-neo' },
-  { key: 'luna', label: 'Luna', style: 'fun-emoji', seed: 'divideai-luna' },
-  { key: 'rex', label: 'Rex', style: 'fun-emoji', seed: 'divideai-rex' },
-  { key: 'ivy', label: 'Ivy', style: 'fun-emoji', seed: 'divideai-ivy' },
-  { key: 'volt', label: 'Volt', style: 'fun-emoji', seed: 'divideai-volt' },
-  { key: 'echo', label: 'Echo', style: 'fun-emoji', seed: 'divideai-echo' },
-  { key: 'nora', label: 'Nora', style: 'fun-emoji', seed: 'divideai-nora' },
-  { key: 'max', label: 'Max', style: 'fun-emoji', seed: 'divideai-max' },
+  { key: 'neo', label: 'Neo', style: 'fun-emoji', seed: 'SplitMate-neo' },
+  { key: 'luna', label: 'Luna', style: 'fun-emoji', seed: 'SplitMate-luna' },
+  { key: 'rex', label: 'Rex', style: 'fun-emoji', seed: 'SplitMate-rex' },
+  { key: 'ivy', label: 'Ivy', style: 'fun-emoji', seed: 'SplitMate-ivy' },
+  { key: 'volt', label: 'Volt', style: 'fun-emoji', seed: 'SplitMate-volt' },
+  { key: 'echo', label: 'Echo', style: 'fun-emoji', seed: 'SplitMate-echo' },
+  { key: 'nora', label: 'Nora', style: 'fun-emoji', seed: 'SplitMate-nora' },
+  { key: 'max', label: 'Max', style: 'fun-emoji', seed: 'SplitMate-max' },
 
-  { key: 'sky', label: 'Sky', style: 'bottts-neutral', seed: 'divideai-sky' },
-  { key: 'zara', label: 'Zara', style: 'bottts-neutral', seed: 'divideai-zara' },
-  { key: 'jin', label: 'Jin', style: 'bottts-neutral', seed: 'divideai-jin' },
-  { key: 'kai', label: 'Kai', style: 'bottts-neutral', seed: 'divideai-kai' },
-  { key: 'mila', label: 'Mila', style: 'bottts-neutral', seed: 'divideai-mila' },
-  { key: 'orion', label: 'Orion', style: 'bottts-neutral', seed: 'divideai-orion' },
-  { key: 'nova', label: 'Nova', style: 'adventurer-neutral', seed: 'divideai-nova' },
-  { key: 'atlas', label: 'Atlas', style: 'bottts-neutral', seed: 'divideai-atlas' },
-  { key: 'riven', label: 'Riven', style: 'bottts-neutral', seed: 'divideai-riven' },
-  { key: 'pixel', label: 'Pixel', style: 'bottts-neutral', seed: 'divideai-pixel' },
-  { key: 'ruby', label: 'Ruby', style: 'adventurer-neutral', seed: 'divideai-ruby', query: 'backgroundColor=ef4444,f87171' },
-  { key: 'emberx', label: 'EmberX', style: 'bottts-neutral', seed: 'divideai-emberx', query: 'backgroundColor=b91c1c,dc2626' },
+  { key: 'sky', label: 'Sky', style: 'bottts-neutral', seed: 'SplitMate-sky' },
+  { key: 'zara', label: 'Zara', style: 'bottts-neutral', seed: 'SplitMate-zara' },
+  { key: 'jin', label: 'Jin', style: 'bottts-neutral', seed: 'SplitMate-jin' },
+  { key: 'kai', label: 'Kai', style: 'bottts-neutral', seed: 'SplitMate-kai' },
+  { key: 'mila', label: 'Mila', style: 'bottts-neutral', seed: 'SplitMate-mila' },
+  { key: 'orion', label: 'Orion', style: 'bottts-neutral', seed: 'SplitMate-orion' },
+  { key: 'nova', label: 'Nova', style: 'adventurer-neutral', seed: 'SplitMate-nova' },
+  { key: 'atlas', label: 'Atlas', style: 'bottts-neutral', seed: 'SplitMate-atlas' },
+  { key: 'riven', label: 'Riven', style: 'bottts-neutral', seed: 'SplitMate-riven' },
+  { key: 'pixel', label: 'Pixel', style: 'bottts-neutral', seed: 'SplitMate-pixel' },
+  { key: 'ruby', label: 'Ruby', style: 'adventurer-neutral', seed: 'SplitMate-ruby', query: 'backgroundColor=ef4444,f87171' },
+  { key: 'emberx', label: 'EmberX', style: 'bottts-neutral', seed: 'SplitMate-emberx', query: 'backgroundColor=b91c1c,dc2626' },
 
-  { key: 'aurora', label: 'Aurora', style: 'adventurer-neutral', seed: 'divideai-aurora' },
-  { key: 'blaze', label: 'Blaze', style: 'adventurer-neutral', seed: 'divideai-blaze' },
-  { key: 'cedar', label: 'Cedar', style: 'adventurer-neutral', seed: 'divideai-cedar' },
-  { key: 'dahlia', label: 'Dahlia', style: 'adventurer-neutral', seed: 'divideai-dahlia' },
-  { key: 'ember', label: 'Ember', style: 'adventurer-neutral', seed: 'divideai-ember' },
-  { key: 'flint', label: 'Flint', style: 'adventurer-neutral', seed: 'divideai-flint' },
-  { key: 'gaia', label: 'Gaia', style: 'adventurer-neutral', seed: 'divideai-gaia' },
-  { key: 'helix', label: 'Helix', style: 'adventurer-neutral', seed: 'divideai-helix' },
+  { key: 'aurora', label: 'Aurora', style: 'adventurer-neutral', seed: 'SplitMate-aurora' },
+  { key: 'blaze', label: 'Blaze', style: 'adventurer-neutral', seed: 'SplitMate-blaze' },
+  { key: 'cedar', label: 'Cedar', style: 'adventurer-neutral', seed: 'SplitMate-cedar' },
+  { key: 'dahlia', label: 'Dahlia', style: 'adventurer-neutral', seed: 'SplitMate-dahlia' },
+  { key: 'ember', label: 'Ember', style: 'adventurer-neutral', seed: 'SplitMate-ember' },
+  { key: 'flint', label: 'Flint', style: 'adventurer-neutral', seed: 'SplitMate-flint' },
+  { key: 'gaia', label: 'Gaia', style: 'adventurer-neutral', seed: 'SplitMate-gaia' },
+  { key: 'helix', label: 'Helix', style: 'adventurer-neutral', seed: 'SplitMate-helix' },
 ]
 
 const LEGACY_KEY_ALIAS: Record<string, string> = {

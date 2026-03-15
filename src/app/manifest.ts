@@ -1,11 +1,11 @@
-import type { MetadataRoute } from "next";
+﻿import type { MetadataRoute } from "next";
 
 export const dynamic = "force-static";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "DivideAI",
-    short_name: "DivideAI",
+    name: "SplitMate",
+    short_name: "SplitMate",
     description: "Organize e divida gastos entre amigos, casais e grupos",
     start_url: "/",
     display: "standalone",
@@ -13,12 +13,12 @@ export default function manifest(): MetadataRoute.Manifest {
     theme_color: "#16A34A",
     icons: [
       {
-        src: "/logo/divideai-icon.png",
+        src: "/logo/splitmate-icon.png",
         sizes: "192x192",
         type: "image/png",
       },
       {
-        src: "/logo/divideai-icon.png",
+        src: "/logo/splitmate-icon.png",
         sizes: "512x512",
         type: "image/png",
       },
@@ -30,3 +30,4 @@ export default function manifest(): MetadataRoute.Manifest {
     ],
   };
 }
+

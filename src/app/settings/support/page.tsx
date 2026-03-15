@@ -1,4 +1,4 @@
-﻿'use client'
+'use client'
 
 import Link from 'next/link'
 import { ArrowLeft, Mail, MessageCircle } from 'lucide-react'
@@ -9,10 +9,10 @@ const whatsappNumber = '5582991138130'
 const whatsappLabel = '(82) 991138130'
 
 export default function SupportPage() {
-  const subject = encodeURIComponent('Suporte Divide Ai')
-  const body = encodeURIComponent('Ola, preciso de ajuda com o app Divide Ai.')
+  const subject = encodeURIComponent('Suporte SplitMate')
+  const body = encodeURIComponent('Ola, preciso de ajuda com o app SplitMate.')
   const mailto = `mailto:${supportEmail}?subject=${subject}&body=${body}`
-  const whatsapp = `https://wa.me/${whatsappNumber}?text=${encodeURIComponent('Ola, preciso de ajuda com o Divide Ai.')}`
+  const whatsapp = `https://wa.me/${whatsappNumber}?text=${encodeURIComponent('Ola, preciso de ajuda com o SplitMate.')}`
 
   return (
     <div className="min-h-screen bg-[#F7F7F7] pb-[calc(6rem+env(safe-area-inset-bottom))] page-fade">

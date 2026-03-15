@@ -1,5 +1,5 @@
 /**
- * 🎨 Font configuration for DivideAI
+ * 🎨 Font configuration for SplitMate
  * 
  * All fonts are installed via @fontsource packages and ready to use.
  * Import any font you need in your components or layout.

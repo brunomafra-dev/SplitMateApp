@@ -154,7 +154,7 @@ export default function Home() {
         }
 
         try {
-          localStorage.removeItem('divideai_groups')
+          localStorage.removeItem('SplitMate_groups')
         } catch {}
 
         const { data: groupRows, error: gErr } = await supabase
@@ -537,4 +537,5 @@ export default function Home() {
     </div>
   )
 }
+
 

@@ -25,7 +25,7 @@ type ProfileSeed = {
   fullName: string
 }
 
-const PENDING_PROFILE_KEY = 'divideai_pending_profile_seed'
+const PENDING_PROFILE_KEY = 'SplitMate_pending_profile_seed'
 
 function normalizeUsername(raw: string) {
   return raw

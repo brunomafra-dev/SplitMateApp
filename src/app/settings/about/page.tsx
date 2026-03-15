@@ -1,4 +1,4 @@
-﻿'use client'
+'use client'
 
 import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
@@ -23,7 +23,7 @@ export default function AboutPage() {
 
       <main className="max-w-4xl mx-auto px-4 py-6">
         <div className="surface-card p-5 space-y-2 text-sm text-gray-700">
-          <p><strong>Aplicativo:</strong> Divide Ai</p>
+          <p><strong>Aplicativo:</strong> SplitMate</p>
           <p><strong>Versão atual:</strong> {version}</p>
           <p><strong>Stack:</strong> Next.js + Supabase</p>
         </div>
