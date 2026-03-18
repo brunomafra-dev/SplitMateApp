@@ -6,6 +6,7 @@
     "dev": "next dev --webpack",
     "dev:turbo": "next dev",
     "build": "next build",
+    "build:capacitor": "set BUILD_TARGET=capacitor&& next build",
     "start": "next start",
     "lint": "next lint"
   },
