@@ -4,7 +4,7 @@
     "type": "APK",
     "kind": "Directory"
   },
-  "applicationId": "com.divideai.app",
+  "applicationId": "com.splitmate.app",
   "variantName": "release",
   "elements": [
     {

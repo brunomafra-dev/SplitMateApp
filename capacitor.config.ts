@@ -1,8 +1,8 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'com.divideai.app',
-  appName: 'DivideAI',
+  appId: 'com.splitmate.app',
+  appName: 'SplitMate',
   webDir: 'out'
 };
 
