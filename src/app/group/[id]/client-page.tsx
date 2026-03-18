@@ -1,11 +1,11 @@
-'use client'
+﻿'use client'
 
 
 
 import { ArrowLeft, Plus, TrendingUp, TrendingDown, Settings, UserPlus, Copy, X, ChevronRight, ChevronDown, Trash2 } from 'lucide-react'
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { generateSecureInviteToken } from '@/lib/invites'
 import { buildInviteLink } from '@/lib/site-url'
@@ -24,6 +24,7 @@ import { usePremium } from '@/hooks/use-premium'
 interface Participant {
   id: string
   user_id?: string
+  role?: string
   display_name?: string
   name: string
   avatar_key?: string
@@ -51,7 +52,9 @@ interface PaymentRow {
   created_at?: string
 }
 interface ParticipantUserRow {
-  user_id: string
+  id?: string
+  user_id?: string
+  display_name?: string
   role?: string
 }
 
@@ -142,6 +145,8 @@ export default function GroupPage() {
   const [inviteLoading, setInviteLoading] = useState(false)
   const [inviteLink, setInviteLink] = useState('')
   const [showParticipantModal, setShowParticipantModal] = useState(false)
+  const [showParticipantsListModal, setShowParticipantsListModal] = useState(false)
+  const [participantsListFeedback, setParticipantsListFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const [manualParticipantName, setManualParticipantName] = useState('')
   const [canNativeShare, setCanNativeShare] = useState(false)
   const [isOwner, setIsOwner] = useState(() => cachedView?.isOwner ?? false)
@@ -157,6 +162,7 @@ export default function GroupPage() {
   const [auditReport, setAuditReport] = useState<FinancialAuditReport>(() => cachedView?.auditReport ?? { valid: true, issues: [] })
   const [showAuditIssues, setShowAuditIssues] = useState(false)
   const [deletingExpenseId, setDeletingExpenseId] = useState<string | null>(null)
+  const [removingParticipantId, setRemovingParticipantId] = useState<string | null>(null)
   const isMountedRef = useRef(true)
 
   const loadGroup = useCallback(async () => {
@@ -202,16 +208,42 @@ export default function GroupPage() {
       return
     }
 
-    const { data: participantRows, error: participantsError } = await supabase
-      .from('participants')
-      .select('user_id,role')
-      .eq('group_id', groupId)
+    const participantSelectCandidates = [
+      'id,user_id,display_name,role',
+      'id,user_id,role',
+      'user_id,role',
+    ]
+    let participantRows: ParticipantUserRow[] | null = null
+    let participantsError: any = null
+
+    for (const selectClause of participantSelectCandidates) {
+      const attempt = await supabase
+        .from('participants')
+        .select(selectClause)
+        .eq('group_id', groupId)
+
+      if (!attempt.error) {
+        participantRows = (attempt.data as ParticipantUserRow[] | null) ?? []
+        participantsError = null
+        break
+      }
+      participantsError = attempt.error
+    }
 
     if (participantsError) {
       console.error('group.participants-load-error', participantsError)
     }
 
-    const participantUsers = ((participantRows as ParticipantUserRow[] | null) ?? [])
+    const participantRowsSafe = (participantRows ?? [])
+    const legacyParticipantToUserId = new Map<string, string>()
+    for (const row of participantRowsSafe) {
+      const participantId = String(row.id || '').trim()
+      const userId = String(row.user_id || '').trim()
+      if (participantId && userId) {
+        legacyParticipantToUserId.set(participantId, userId)
+      }
+    }
+    const participantUsers = participantRowsSafe
       .map((row) => String(row.user_id || '').trim())
       .filter(Boolean)
 
@@ -246,18 +278,34 @@ export default function GroupPage() {
       }
     }
 
-    const tableParticipants: Participant[] = participantUsers.map((userId) => {
-      const profile = profileMap.get(userId)
-      const isSelf = String(userId) === String(currentUserId)
-      const canShow = Boolean(profile?.privacy_profile_visible || isSelf)
-      const display = String(canShow ? (profile?.username || profile?.full_name || 'usuário') : 'Participante').trim()
+    const tableParticipants: Participant[] = participantRowsSafe.map((row) => {
+      const participantId = String(row.id || row.user_id || '').trim()
+      const userId = String(row.user_id || '').trim()
+      const manualName = String(row.display_name || '').trim()
+
+      if (userId) {
+        const profile = profileMap.get(userId)
+        const isSelf = userId === String(currentUserId)
+        const canShow = Boolean(profile?.privacy_profile_visible || isSelf)
+        const display = String(canShow ? (profile?.username || profile?.full_name || 'usuario') : 'Participante').trim()
+        return {
+          id: participantId || userId,
+          user_id: userId,
+          role: String(row.role || 'member'),
+          name: display || 'usuario',
+          display_name: display || 'usuario',
+          avatar_key: canShow ? (profile?.avatar_key || '') : '',
+          is_premium: canShow ? Boolean(profile?.is_premium) : false,
+        }
+      }
+
       return {
-        id: userId,
-        user_id: userId,
-        name: display || 'usuário',
-        display_name: display || 'usuário',
-        avatar_key: canShow ? (profile?.avatar_key || '') : '',
-        is_premium: canShow ? Boolean(profile?.is_premium) : false,
+        id: participantId || 'manual-unknown',
+        role: String(row.role || 'member'),
+        name: manualName || 'Participante',
+        display_name: manualName || 'Participante',
+        avatar_key: '',
+        is_premium: false,
       }
     })
 
@@ -324,16 +372,41 @@ export default function GroupPage() {
       }
     }
 
-    const safeTx: TransactionRow[] = ((txRows as TransactionRow[] | null) ?? []).map((tx) => ({
-      ...tx,
-      value: Number(tx.value) || 0,
-      payer_id: String(tx.payer_id || ''),
-      description: String(tx.description || ''),
-      created_at: tx.created_at || new Date().toISOString(),
-      status: String(tx.status || ''),
-      participants: Array.isArray(tx.participants) ? tx.participants.map((id) => String(id || '').trim()).filter(Boolean) : [],
-      splits: (tx.splits && typeof tx.splits === 'object' ? tx.splits : {}) as Record<string, number>,
-    }))
+    const safeTx: TransactionRow[] = ((txRows as TransactionRow[] | null) ?? []).map((tx) => {
+      const rawPayerId = String(tx.payer_id || '').trim()
+      const payerId = legacyParticipantToUserId.get(rawPayerId) || rawPayerId
+      const rawSplits = (tx.splits && typeof tx.splits === 'object' ? tx.splits : {}) as Record<string, number>
+      const normalizedSplits = Object.entries(rawSplits).reduce<Record<string, number>>((acc, [rawId, rawAmount]) => {
+        const key = legacyParticipantToUserId.get(String(rawId || '').trim()) || String(rawId || '').trim()
+        if (!key) return acc
+        const amount = Number(rawAmount) || 0
+        acc[key] = (acc[key] || 0) + amount
+        return acc
+      }, {})
+      const normalizedParticipants = Array.isArray(tx.participants)
+        ? Array.from(
+            new Set(
+              tx.participants
+                .map((id) => {
+                  const rawId = String(id || '').trim()
+                  return legacyParticipantToUserId.get(rawId) || rawId
+                })
+                .filter(Boolean)
+            )
+          )
+        : []
+
+      return {
+        ...tx,
+        value: Number(tx.value) || 0,
+        payer_id: payerId,
+        description: String(tx.description || ''),
+        created_at: tx.created_at || new Date().toISOString(),
+        status: String(tx.status || ''),
+        participants: normalizedParticipants,
+        splits: normalizedSplits,
+      }
+    })
 
     const safePayments: PaymentRow[] = ((payRows as PaymentRow[] | null) ?? []).map((p) => ({
       ...p,
@@ -489,7 +562,7 @@ export default function GroupPage() {
         description: tx.description,
         amount: tx.value,
         payerId: tx.payer_id,
-        payerName: tx.payer_id === currentUserId ? 'Você' : payer?.name || 'Alguem',
+        payerName: tx.payer_id === currentUserId ? 'Você' : payer?.name || 'Alguém',
         date: tx.created_at || new Date().toISOString(),
         participants: txParticipantIds,
         status: String(tx.status || '').toLowerCase(),
@@ -620,6 +693,17 @@ export default function GroupPage() {
     await handleCopyInviteLink()
   }, [group?.name, handleCopyInviteLink, inviteLink])
 
+  const handleCopyInviteFromParticipantsModal = useCallback(async () => {
+    if (inviteLink) {
+      await navigator.clipboard.writeText(inviteLink)
+      setReportFeedback({ type: 'success', text: 'Link de convite copiado.' })
+      return
+    }
+
+    await handleCreateInvite()
+    setReportFeedback({ type: 'success', text: 'Link de convite gerado e copiado.' })
+  }, [handleCreateInvite, inviteLink])
+
   const whatsappShareUrl = inviteLink
     ? `https://wa.me/?text=${encodeURIComponent(`Entre no meu grupo no SplitMate: ${inviteLink}`)}`
     : ''
@@ -705,7 +789,7 @@ export default function GroupPage() {
     popup.document.close()
     popup.focus()
     popup.print()
-    setReportFeedback({ type: 'success', text: 'PDF pronto para salvar via impressao.' })
+    setReportFeedback({ type: 'success', text: 'PDF pronto para salvar via impressão.' })
   }, [group, report])
 
   const handleRegisterSuggestedSettlements = useCallback(async () => {
@@ -751,7 +835,7 @@ export default function GroupPage() {
     } else if (successCount > 0 && failCount > 0) {
       setReportFeedback({ type: 'error', text: `Foram registrados ${successCount} pagamentos e ${failCount} falharam.` })
     } else {
-      setReportFeedback({ type: 'error', text: 'Não foi possivel registrar os pagamentos sugeridos.' })
+      setReportFeedback({ type: 'error', text: 'Não foi possível registrar os pagamentos sugeridos.' })
     }
 
     await loadGroup()
@@ -761,42 +845,21 @@ export default function GroupPage() {
   const handleAddManualParticipant = useCallback(async () => {
     if (!group || !manualParticipantName.trim()) return
 
-    const candidate = manualParticipantName.trim()
-    const normalizedUsername = candidate.toLowerCase()
-
-    let targetUserId = ''
-    const { data: exactUser, error: exactUserError } = await supabase
-      .from('profiles')
-      .select('id')
-      .eq('username', normalizedUsername)
-      .maybeSingle()
-
-    if (exactUserError) {
-      console.error('group.manual-participant-profile-lookup-error', exactUserError)
+    const manualName = manualParticipantName.trim()
+    if (!manualName) {
+      setReportFeedback({ type: 'error', text: 'Informe o nome do participante.' })
       return
     }
 
-    if (exactUser?.id) {
-      targetUserId = String(exactUser.id)
-    } else {
-      const { data: byFullName, error: byFullNameError } = await supabase
-        .from('profiles')
-        .select('id,full_name')
-        .ilike('full_name', candidate)
-        .limit(2)
+    const normalizedManualName = manualName.toLowerCase()
+    const existingManual = group.participantsList.some((participant) => {
+      const participantName = String(participant.display_name || participant.name || '').trim().toLowerCase()
+      const isManualParticipant = !String(participant.user_id || '').trim()
+      return isManualParticipant && participantName === normalizedManualName
+    })
 
-      if (byFullNameError) {
-        console.error('group.manual-participant-fullname-lookup-error', byFullNameError)
-        return
-      }
-
-      if ((byFullName || []).length === 1 && byFullName?.[0]?.id) {
-        targetUserId = String(byFullName[0].id)
-      }
-    }
-
-    if (!targetUserId) {
-      setReportFeedback({ type: 'error', text: 'Usuário não encontrado. Informe o nome de usuário exato.' })
+    if (existingManual) {
+      setReportFeedback({ type: 'error', text: 'Esse participante manual já existe no grupo.' })
       return
     }
 
@@ -804,25 +867,109 @@ export default function GroupPage() {
       .from('participants')
       .insert({
         group_id: group.id,
-        user_id: targetUserId,
+        user_id: null,
+        display_name: manualName,
         role: 'member',
       })
 
-    if (error && error.code !== '23505') {
+    if (error) {
       console.error('group.manual-participant-insert-error', error)
-      setReportFeedback({ type: 'error', text: 'Erro ao adicionar participante.' })
+      if (error.code === '42501') {
+        setReportFeedback({ type: 'error', text: 'Sem permissão para adicionar participante (RLS).' })
+        return
+      }
+      if (error.code === '42703' || error.code === '23502') {
+        setReportFeedback({
+          type: 'error',
+          text: 'Participante manual indisponível: aplique as migrations pendentes do Supabase (supabase db push).',
+        })
+        return
+      }
+      setReportFeedback({ type: 'error', text: `Erro ao adicionar participante: ${error.message || 'falha desconhecida.'}` })
       return
     }
 
     setManualParticipantName('')
     setShowParticipantModal(false)
-    if (error?.code === '23505') {
-      setReportFeedback({ type: 'error', text: 'Esse usuário já participa do grupo.' })
-    } else {
-      setReportFeedback({ type: 'success', text: 'Participante adicionado com sucesso.' })
-    }
+    setReportFeedback({ type: 'success', text: 'Participante adicionado com sucesso.' })
     await loadGroup()
   }, [group, manualParticipantName, loadGroup])
+
+  const handleRemoveParticipant = useCallback(async (participant: Participant) => {
+    if (!group || !isOwner) return
+
+    const participantRole = String(participant.role || 'member')
+    if (participantRole === 'owner') {
+      setReportFeedback({ type: 'error', text: 'O owner do grupo não pode ser removido.' })
+      setParticipantsListFeedback({ type: 'error', text: 'O owner do grupo não pode ser removido.' })
+      return
+    }
+
+    const participantLabel = String(participant.name || participant.display_name || 'Participante')
+    const confirmed = window.confirm(`Remover "${participantLabel}" do grupo?`)
+    if (!confirmed) return
+
+    setRemovingParticipantId(String(participant.id))
+    try {
+      let removedCount = 0
+
+      const participantRowId = String(participant.id || '').trim()
+      if (participantRowId) {
+        const { data, error } = await supabase
+          .from('participants')
+          .delete()
+          .eq('group_id', group.id)
+          .eq('id', participantRowId)
+          .select('id')
+
+        if (error) throw error
+        removedCount += (data ?? []).length
+      }
+
+      if (removedCount === 0 && String(participant.user_id || '').trim()) {
+        const { data, error } = await supabase
+          .from('participants')
+          .delete()
+          .eq('group_id', group.id)
+          .eq('user_id', String(participant.user_id).trim())
+          .select('id')
+
+        if (error) throw error
+        removedCount += (data ?? []).length
+      }
+
+      if (removedCount === 0) {
+        const text = 'Não foi possível remover participante. Verifique permissões (RLS) ou recarregue o grupo.'
+        setReportFeedback({
+          type: 'error',
+          text,
+        })
+        setParticipantsListFeedback({ type: 'error', text })
+        return
+      }
+
+      setReportFeedback({ type: 'success', text: 'Participante removido com sucesso.' })
+      setParticipantsListFeedback({ type: 'success', text: 'Participante removido com sucesso.' })
+      await loadGroup()
+    } catch (error: any) {
+      console.error('group.remove-participant-error', error)
+      if (error?.code === '42501') {
+        const text = 'Sem permissão para remover participante (RLS).'
+        setReportFeedback({ type: 'error', text })
+        setParticipantsListFeedback({ type: 'error', text })
+      } else if (error?.code === '23503') {
+        const text = 'Não é possível remover: participante possui vínculo em dados do grupo.'
+        setReportFeedback({ type: 'error', text })
+        setParticipantsListFeedback({ type: 'error', text })
+      } else {
+        const text = error?.message || 'Erro ao remover participante.'
+        setReportFeedback({ type: 'error', text })
+        setParticipantsListFeedback({ type: 'error', text })
+      }
+    } finally {
+      setRemovingParticipantId(null)
+    }
+  }, [group, isOwner, loadGroup])
 
   useEffect(() => {
     const resolveSession = async () => {
@@ -895,6 +1042,19 @@ export default function GroupPage() {
     }
   }, [currentUserId, groupId, loadGroup])
 
+  const orderedParticipants = useMemo(() => {
+    const list = group?.participantsList ?? []
+    return [...list].sort((a, b) => {
+      const aOwner = String(a.role || 'member') === 'owner' ? 1 : 0
+      const bOwner = String(b.role || 'member') === 'owner' ? 1 : 0
+      if (aOwner !== bOwner) return bOwner - aOwner
+
+      const aName = String(a.name || a.display_name || '').trim().toLocaleLowerCase('pt-BR')
+      const bName = String(b.name || b.display_name || '').trim().toLocaleLowerCase('pt-BR')
+      return aName.localeCompare(bName, 'pt-BR')
+    })
+  }, [group?.participantsList])
+
   if ((authLoading && !group) || (loading && !group)) {
     return (
       <div className="min-h-screen bg-[#F7F7F7] flex items-center justify-center">
@@ -906,15 +1066,15 @@ export default function GroupPage() {
   if (!group) {
     return (
       <div className="min-h-screen bg-[#F7F7F7] flex items-center justify-center">
-        <p className="text-gray-600">Grupo Não encontrado</p>
+        <p className="text-gray-600">Grupo não encontrado</p>
       </div>
     )
   }
 
   const amountPerPerson = group.participants > 0 ? group.totalSpent / group.participants : 0
-  const topParticipants = group.participantsList.slice(0, 4)
-  const extraParticipants = Math.max(0, group.participantsList.length - 4)
-  const settlementProfiles = group.participantsList.map((participant) => ({
+  const topParticipants = orderedParticipants.slice(0, 4)
+  const extraParticipants = Math.max(0, orderedParticipants.length - 4)
+  const settlementProfiles = orderedParticipants.map((participant) => ({
     userId: String(participant.user_id || participant.id),
     name: participant.name || 'Participante',
     avatarKey: participant.avatar_key,
@@ -945,7 +1105,11 @@ export default function GroupPage() {
 
       <div className="bg-white border-b border-gray-200">
         <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center">
+          <button
+            type="button"
+            onClick={() => setShowParticipantsListModal(true)}
+            className="tap-target touch-friendly pressable flex items-center text-left"
+          >
             {topParticipants.map((participant, index) => {
               return (
                 <div
@@ -971,10 +1135,11 @@ export default function GroupPage() {
                 +{extraParticipants}
               </div>
             )}
-            {group.participantsList.length === 1 && (
-              <p className="text-sm text-gray-500 ml-3">Aguardando participantes...</p>
-            )}
-          </div>
+            <div className="ml-3">
+              <p className="text-sm font-medium text-gray-700">{orderedParticipants.length} participantes</p>
+              <p className="text-xs text-gray-500">Toque para ver a lista</p>
+            </div>
+          </button>
 
           {isOwner ? (
             <button
@@ -1044,7 +1209,7 @@ export default function GroupPage() {
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm text-gray-600">Participante manual</label>
+              <label className="text-sm text-gray-600">Participante manual (sem conta)</label>
               <input
                 type="text"
                 value={manualParticipantName}
@@ -1057,7 +1222,7 @@ export default function GroupPage() {
                 className="w-full tap-target touch-friendly pressable py-2 border border-gray-300 text-gray-700 rounded-lg font-medium active:bg-gray-100"
                 type="button"
               >
-                Adicionar manualmente
+                Adicionar participante
               </button>
             </div>
 
@@ -1113,6 +1278,89 @@ export default function GroupPage() {
                   </div>
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showParticipantsListModal && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center px-4 pt-4 pb-[calc(6.5rem+env(safe-area-inset-bottom))] sm:p-4">
+          <div className="bg-white w-full max-w-md rounded-2xl shadow-xl p-4 space-y-4 max-h-[calc(100dvh-9rem-env(safe-area-inset-bottom))] sm:max-h-[85vh] overflow-y-auto">
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-semibold text-gray-800">Participantes do grupo</h3>
+              <div className="flex items-center gap-2">
+                {isOwner && (
+                  <button
+                    type="button"
+                    onClick={handleCopyInviteFromParticipantsModal}
+                    className="tap-target touch-friendly pressable px-2.5 py-1.5 text-xs rounded-lg border border-gray-200 text-gray-700 active:bg-gray-50 flex items-center gap-1"
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                    Copiar convite
+                  </button>
+                )}
+                <button onClick={() => setShowParticipantsListModal(false)} type="button" className="tap-target touch-friendly pressable text-gray-500 active:text-gray-700">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {participantsListFeedback && (
+              <div
+                className={`text-sm rounded-lg px-3 py-2 ${
+                  participantsListFeedback.type === 'success'
+                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
+                    : 'bg-red-50 text-red-700 border border-red-100'
+                }`}
+              >
+                {participantsListFeedback.text}
+              </div>
+            )}
+
+            <div className="space-y-2">
+              {orderedParticipants.map((participant) => {
+                const isManual = !String(participant.user_id || '').trim()
+                return (
+                  <div key={String(participant.id)} className="flex items-center justify-between rounded-xl border border-gray-100 px-3 py-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <UserAvatar
+                        name={String(participant.name || participant.display_name || 'Participante')}
+                        avatarKey={participant.avatar_key}
+                        isPremium={participant.is_premium}
+                        className="w-9 h-9"
+                        textClassName="text-xs"
+                      />
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-gray-800 truncate">{String(participant.name || participant.display_name || 'Participante')}</p>
+                        <p className="text-xs text-gray-500">{isManual ? 'Manual (sem conta)' : 'Usuário'}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
+                          String(participant.role || 'member') === 'owner'
+                            ? 'bg-emerald-100 text-emerald-700'
+                            : 'bg-gray-100 text-gray-600'
+                        }`}
+                      >
+                        {String(participant.role || 'member') === 'owner' ? 'Owner' : 'Membro'}
+                      </span>
+                      {isOwner && String(participant.role || 'member') !== 'owner' && (
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveParticipant(participant)}
+                          disabled={removingParticipantId === String(participant.id)}
+                          className="tap-target touch-friendly pressable text-red-500 active:text-red-600 disabled:opacity-50"
+                          title="Remover participante"
+                          aria-label={`Remover ${String(participant.name || participant.display_name || 'participante')}`}
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
             </div>
           </div>
         </div>
@@ -1229,7 +1477,7 @@ export default function GroupPage() {
                     </div>
                   </>
                 ) : (
-                  <p className="section-subtitle">Disponivel no plano Premium com exportacao CSV/PDF e consolidado por participante.</p>
+                  <p className="section-subtitle">Disponível no plano Premium com exportação CSV/PDF e consolidado por participante.</p>
                 )}
 
                 <div className="border-t border-gray-200 pt-4">
@@ -1303,7 +1551,7 @@ export default function GroupPage() {
           <div className="max-w-4xl mx-auto px-4 py-3">
             <div className="rounded-lg border border-amber-200 bg-amber-100/70 p-3">
               <div className="flex items-center justify-between gap-3">
-                <p className="text-sm text-amber-900">Detectamos inconsistencias financeiras neste grupo.</p>
+                <p className="text-sm text-amber-900">Detectamos inconsistências financeiras neste grupo.</p>
                 <button
                   type="button"
                   onClick={() => setShowAuditIssues((prev) => !prev)}
@@ -1320,7 +1568,7 @@ export default function GroupPage() {
                       <p className="text-xs font-semibold text-amber-900">{issue.type}</p>
                       <p className="text-xs text-amber-800">{issue.message}</p>
                       {issue.transactionId && (
-                        <p className="text-[11px] text-amber-700 mt-0.5">Transacao: {issue.transactionId}</p>
+                        <p className="text-[11px] text-amber-700 mt-0.5">Transação: {issue.transactionId}</p>
                       )}
                     </div>
                   ))}
@@ -1445,10 +1693,10 @@ export default function GroupPage() {
                       <span>{transaction.participants.length} {transaction.participants.length === 1 ? 'pessoa' : 'pessoas'}</span>
                     </div>
                     {!canEditExpense && !transaction.isPaid && (
-                      <p className="text-xs text-gray-500 mt-2">Somente visualizacao (apenas quem criou o gasto pode editar)</p>
+                      <p className="text-xs text-gray-500 mt-2">Somente visualização (apenas quem criou o gasto pode editar)</p>
                     )}
                     {transaction.isPaid && (
-                      <p className="text-xs text-[#5BC5A7] mt-2">Gasto quitado (Não editavel)</p>
+                      <p className="text-xs text-[#5BC5A7] mt-2">Gasto quitado (não editável)</p>
                     )}
                   </div>
                 )

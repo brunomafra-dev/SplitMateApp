@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabase'
 
 export default function ResetPasswordPage() {
   const [loadingSession, setLoadingSession] = useState(true)
+  const [canReset, setCanReset] = useState(false)
   const [saving, setSaving] = useState(false)
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -16,15 +17,79 @@ export default function ResetPasswordPage() {
   const [success, setSuccess] = useState('')
 
   useEffect(() => {
-    const run = async () => {
-      const { data } = await supabase.auth.getSession()
-      if (!data.session) {
-        setError('Link invalido ou expirado. Solicite um novo link de recuperacao.')
+    let isMounted = true
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!isMounted) return
+      if (event === 'PASSWORD_RECOVERY' || Boolean(session)) {
+        setCanReset(true)
+        setError('')
+        setLoadingSession(false)
       }
-      setLoadingSession(false)
+    })
+
+    const run = async () => {
+      const hasRecoveryHint =
+        (typeof window !== 'undefined' &&
+          (window.location.hash.includes('type=recovery') ||
+            window.location.search.includes('type=recovery') ||
+            window.location.search.includes('code='))) ||
+        false
+
+      try {
+        if (typeof window !== 'undefined') {
+          const url = new URL(window.location.href)
+          const code = url.searchParams.get('code')
+          if (code) {
+            await supabase.auth.exchangeCodeForSession(code)
+          }
+        }
+
+        const { data } = await supabase.auth.getSession()
+        if (data.session) {
+          if (!isMounted) return
+          setCanReset(true)
+          setError('')
+          setLoadingSession(false)
+          return
+        }
+
+        if (!hasRecoveryHint) {
+          if (!isMounted) return
+          setCanReset(false)
+          setError('Link inválido ou expirado. Solicite um novo link de recuperação.')
+          setLoadingSession(false)
+          return
+        }
+
+        // Recovery can arrive asynchronously; avoid false negatives.
+        setTimeout(async () => {
+          const { data: delayed } = await supabase.auth.getSession()
+          if (!isMounted) return
+          if (delayed.session) {
+            setCanReset(true)
+            setError('')
+          } else {
+            setCanReset(false)
+            setError('Link inválido ou expirado. Solicite um novo link de recuperação.')
+          }
+          setLoadingSession(false)
+        }, 1200)
+      } catch {
+        if (!isMounted) return
+        setCanReset(false)
+        setError('Não foi possível validar o link de recuperação. Solicite um novo.')
+        setLoadingSession(false)
+      }
     }
 
     run()
+    return () => {
+      isMounted = false
+      subscription.unsubscribe()
+    }
   }, [])
 
   const handleReset = async (e: React.FormEvent) => {
@@ -38,7 +103,7 @@ export default function ResetPasswordPage() {
     }
 
     if (password !== confirmPassword) {
-      setError('As senhas Não coincidem')
+      setError('As senhas não coincidem')
       return
     }
 
@@ -50,7 +115,7 @@ export default function ResetPasswordPage() {
 
       if (updateError) throw updateError
 
-      setSuccess('Senha atualizada com sucesso. Você ja pode entrar com a nova senha.')
+      setSuccess('Senha atualizada com sucesso. Você já pode entrar com a nova senha.')
     } catch (err: any) {
       setError(err?.message || 'Erro ao atualizar senha')
     } finally {
@@ -102,6 +167,7 @@ export default function ResetPasswordPage() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
+                  disabled={!canReset}
                   className="w-full pl-11 pr-12 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#5BC5A7] focus:border-transparent outline-none transition-all"
                 />
                 <button
@@ -126,6 +192,7 @@ export default function ResetPasswordPage() {
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   required
+                  disabled={!canReset}
                   className="w-full pl-11 pr-12 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#5BC5A7] focus:border-transparent outline-none transition-all"
                 />
                 <button
@@ -140,7 +207,7 @@ export default function ResetPasswordPage() {
 
             <button
               type="submit"
-              disabled={saving}
+              disabled={saving || !canReset}
               className="w-full bg-[#5BC5A7] text-white py-3 rounded-lg font-medium hover:bg-[#4AB396] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {saving ? 'Salvando...' : 'Atualizar senha'}

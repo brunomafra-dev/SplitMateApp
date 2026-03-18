@@ -1,14 +1,12 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import LegalDocModal from '@/components/legal-doc-modal'
 import { useAuth } from '@/context/AuthContext'
 import { setLocalLegalConsent } from '@/lib/legal-consent'
 
 export default function LegalConsentPage() {
-  const router = useRouter()
   const { user } = useAuth()
   const [accepted, setAccepted] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -29,27 +27,34 @@ export default function LegalConsentPage() {
     }
 
     setLoading(true)
-    setLocalLegalConsent(user.id, true)
+    try {
+      const { error: updateError } = await supabase
+        .from('profiles')
+        .update({
+          terms_accepted_at: new Date().toISOString(),
+          privacy_accepted_at: new Date().toISOString(),
+        })
+        .eq('id', user.id)
 
-    const { error: updateError } = await supabase
-      .from('profiles')
-      .update({
-        terms_accepted_at: new Date().toISOString(),
-        privacy_accepted_at: new Date().toISOString(),
-      })
-      .eq('id', user.id)
+      if (updateError) {
+        console.error('legal-consent.update-error', {
+          code: updateError.code,
+          message: updateError.message,
+          details: updateError.details,
+          hint: updateError.hint,
+        })
+        setError('Nao foi possivel salvar o aceite. Tente novamente.')
+        setLoading(false)
+        return
+      }
 
-    if (updateError) {
-      console.error('legal-consent.update-error', {
-        code: updateError.code,
-        message: updateError.message,
-        details: updateError.details,
-        hint: updateError.hint,
-      })
+      setLocalLegalConsent(user.id, true)
+      window.location.replace('/')
+    } catch (error: any) {
+      console.error('legal-consent.unhandled-error', error)
+      setError(error?.message || 'Erro ao salvar aceite.')
+      setLoading(false)
     }
-
-    router.replace('/')
-    router.refresh()
   }
 
   return (

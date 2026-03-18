@@ -30,8 +30,6 @@ export default function SignUpPage() {
   const [error, setError] = useState('')
   const [usernameStatus, setUsernameStatus] = useState<'idle' | 'available' | 'taken'>('idle')
   const [checkingUsername, setCheckingUsername] = useState(false)
-  const [termsViewed, setTermsViewed] = useState(false)
-  const [privacyViewed, setPrivacyViewed] = useState(false)
   const [acceptedLegal, setAcceptedLegal] = useState(false)
   const [legalModal, setLegalModal] = useState<'terms' | 'privacy' | null>(null)
 
@@ -344,21 +342,11 @@ export default function SignUpPage() {
                 <input
                   type="checkbox"
                   checked={acceptedLegal}
-                  disabled={!termsViewed || !privacyViewed}
-                  onChange={(e) => {
-                    if (!termsViewed || !privacyViewed) {
-                      setError('Leia os Termos e a Política antes de aceitar.')
-                      return
-                    }
-                    setAcceptedLegal(e.target.checked)
-                  }}
+                  onChange={(e) => setAcceptedLegal(e.target.checked)}
                   className="mt-1"
                 />
                 <span>Li e aceito os Termos de Uso e a Política de Privacidade</span>
               </label>
-              {(!termsViewed || !privacyViewed) && (
-                <p className="text-xs text-gray-500">Você precisa abrir e ler os dois documentos para habilitar o aceite.</p>
-              )}
             </div>
           </form>
 
@@ -390,10 +378,7 @@ export default function SignUpPage() {
         open={legalModal !== null}
         type={legalModal || 'terms'}
         onClose={() => setLegalModal(null)}
-        onViewed={() => {
-          if (legalModal === 'terms') setTermsViewed(true)
-          if (legalModal === 'privacy') setPrivacyViewed(true)
-        }}
+        onViewed={() => {}}
       />
     </div>
   )

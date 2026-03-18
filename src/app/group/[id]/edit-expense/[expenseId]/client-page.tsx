@@ -95,10 +95,28 @@ export default function EditExpensePage() {
 
       setGroupName(String(groupRow.name || "Editar gasto"));
 
-      const { data: participantRows, error: participantError } = await supabase
-        .from("participants")
-        .select("id,user_id")
-        .eq("group_id", groupId);
+      const participantSelectCandidates = [
+        "id,user_id,display_name",
+        "id,user_id",
+        "user_id",
+      ];
+      let participantRows: Array<{ id?: string | null; user_id?: string | null; display_name?: string | null }> | null = null;
+      let participantError: any = null;
+
+      for (const selectClause of participantSelectCandidates) {
+        const attempt = await supabase
+          .from("participants")
+          .select(selectClause)
+          .eq("group_id", groupId);
+
+        if (!attempt.error) {
+          participantRows = ((attempt.data as Array<{ id?: string | null; user_id?: string | null; display_name?: string | null }> | null) ?? []);
+          participantError = null;
+          break;
+        }
+
+        participantError = attempt.error;
+      }
 
       if (participantError) {
         console.error("edit-expense.participants-load-error", participantError);
@@ -106,7 +124,7 @@ export default function EditExpensePage() {
         return;
       }
 
-      const participantRowsSafe = ((participantRows as Array<{ id?: string | null; user_id?: string | null }> | null) ?? []);
+      const participantRowsSafe = (participantRows ?? []);
       const legacyParticipantToUserId = new Map<string, string>();
       for (const row of participantRowsSafe) {
         const legacyId = String(row.id || "").trim();
@@ -141,14 +159,25 @@ export default function EditExpensePage() {
         }
       }
 
-      const normalizedParticipants: Participant[] = userIds.map((userId) => {
-        const profile = profileMap.get(userId);
-        const name = profile?.username || profile?.full_name || "Participante";
+      const normalizedParticipants: Participant[] = participantRowsSafe.map((row) => {
+        const userId = String(row.user_id || "").trim();
+        const participantId = String(row.id || userId).trim();
+        if (userId) {
+          const profile = profileMap.get(userId);
+          const name = profile?.username || profile?.full_name || "Participante";
+          return {
+            id: userId,
+            name,
+            avatarKey: profile?.avatar_key || "",
+            isPremium: Boolean(profile?.is_premium),
+          };
+        }
+
         return {
-          id: userId,
-          name,
-          avatarKey: profile?.avatar_key || "",
-          isPremium: Boolean(profile?.is_premium),
+          id: participantId,
+          name: String(row.display_name || "Participante").trim() || "Participante",
+          avatarKey: "",
+          isPremium: false,
         };
       });
 

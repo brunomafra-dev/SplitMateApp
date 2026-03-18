@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 
 
@@ -67,10 +67,28 @@ export default function AddExpense() {
         return
       }
 
-      const { data: participantRows, error: participantsError } = await supabase
-        .from('participants')
-        .select('user_id')
-        .eq('group_id', groupId)
+      const participantSelectCandidates = [
+        'id,user_id,display_name',
+        'id,user_id',
+        'user_id',
+      ]
+      let participantRows: Array<{ id?: string; user_id?: string; display_name?: string }> | null = null
+      let participantsError: any = null
+
+      for (const selectClause of participantSelectCandidates) {
+        const attempt = await supabase
+          .from('participants')
+          .select(selectClause)
+          .eq('group_id', groupId)
+
+        if (!attempt.error) {
+          participantRows = ((attempt.data as Array<{ id?: string; user_id?: string; display_name?: string }> | null) ?? [])
+          participantsError = null
+          break
+        }
+
+        participantsError = attempt.error
+      }
 
       if (participantsError) {
         console.error('add-expense.participants-load-error', participantsError)
@@ -78,7 +96,8 @@ export default function AddExpense() {
         return
       }
 
-      const participantIds = ((participantRows as Array<{ user_id?: string }> | null) ?? [])
+      const participantRowsSafe = (participantRows ?? [])
+      const participantIds = participantRowsSafe
         .map((row) => String(row.user_id || '').trim())
         .filter(Boolean)
 
@@ -105,16 +124,28 @@ export default function AddExpense() {
         }
       }
 
-      const participantsList: Participant[] = participantIds.map((id) => {
-        const profile = profileMap.get(id)
-        return {
-          id,
-          name: profile?.username || profile?.full_name || 'usuário',
-          avatarKey: profile?.avatar_key || '',
-          isPremium: Boolean(profile?.is_premium),
-        }
-      })
+      const participantsList: Participant[] = participantRowsSafe
+        .map((row) => {
+          const userId = String(row.user_id || '').trim()
+          if (userId) {
+            const profile = profileMap.get(userId)
+            return {
+              id: userId,
+              name: profile?.username || profile?.full_name || 'usuario',
+              avatarKey: profile?.avatar_key || '',
+              isPremium: Boolean(profile?.is_premium),
+            }
+          }
 
+          const manualId = String(row.id || '').trim()
+          return {
+            id: manualId,
+            name: String(row.display_name || 'Participante').trim() || 'Participante',
+            avatarKey: '',
+            isPremium: false,
+          }
+        })
+        .filter((participant) => Boolean(participant.id))
       setGroup({
         id: data.id,
         name: data.name,
@@ -206,7 +237,7 @@ export default function AddExpense() {
     } = await supabase.auth.getUser()
     if (!user) {
       setSaving(false)
-      setFeedback({ type: 'error', text: 'usuário Não autenticado.' })
+      setFeedback({ type: 'error', text: 'Usuário não autenticado.' })
       return
     }
 
@@ -243,8 +274,8 @@ export default function AddExpense() {
       setFeedback({
         type: 'error',
         text: splitType === 'manual'
-          ? 'Divisao manual invalida. Ajuste os pesos dos participantes.'
-          : 'Divisao invalida para este gasto.',
+          ? 'Divisão manual inválida. Ajuste os pesos dos participantes.'
+          : 'Divisão inválida para este gasto.',
       })
       return
     }
@@ -306,7 +337,7 @@ export default function AddExpense() {
   if (!group) {
     return (
       <div className="min-h-screen bg-[#F7F7F7] flex items-center justify-center">
-        <p className="text-gray-600">Grupo Não encontrado</p>
+        <p className="text-gray-600">Grupo não encontrado</p>
       </div>
     )
   }
@@ -442,7 +473,7 @@ export default function AddExpense() {
 
           {splitType === 'manual' && (
             <div className="mt-4 space-y-2">
-              <p className="text-xs text-gray-600">Defina o peso de cada participante (0 = Não participa)</p>
+              <p className="text-xs text-gray-600">Defina o peso de cada participante (0 = não participa)</p>
               {group.participantsList.map((participant) => {
                 const currentWeight = Number(weights[participant.id] ?? (participant.id === payerId ? 1 : 0))
                 return (
