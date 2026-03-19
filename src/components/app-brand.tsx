@@ -1,4 +1,4 @@
-﻿type AppBrandProps = {
+type AppBrandProps = {
   className?: string
   iconClassName?: string
   textClassName?: string
@@ -16,4 +16,6 @@ export default function AppBrand({
     </div>
   )
 }
+
+
 

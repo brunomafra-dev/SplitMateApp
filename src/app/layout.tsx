@@ -1,4 +1,4 @@
-﻿import type { Metadata, Viewport } from "next"
+import type { Metadata, Viewport } from "next"
 import { Geist, Geist_Mono } from "next/font/google"
 import "./globals.css"
 import "../lib/fonts"
@@ -27,7 +27,7 @@ export const metadata: Metadata = {
       { url: "/favicon.ico" },
       { url: "/logo/splitmate-icon.png", type: "image/png", sizes: "512x512" },
     ],
-    apple: [{ url: "/logo/splitmate-icon.png", sizes: "180x180", type: "image/png" }],
+    apple: [{ url: "/logo/splitmate-apple-icon.png", sizes: "180x180", type: "image/png" }],
     shortcut: ["/favicon.ico"],
   },
 }
@@ -51,4 +51,5 @@ export default function RootLayout({
     </html>
   )
 }
+
 

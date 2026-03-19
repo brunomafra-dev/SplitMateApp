@@ -285,7 +285,7 @@ export default function RegisterPage() {
         </div>
 
         <p className="text-sm text-center text-gray-500">
-          Ja tem conta?{' '}
+          Já tem conta?{' '}
           <Link href="/login" className="text-[#5BC5A7] font-medium">
             Entrar
           </Link>
@@ -301,4 +301,6 @@ export default function RegisterPage() {
     </div>
   )
 }
+
+
 

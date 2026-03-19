@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-label="SplitMate Icon Preview A">
+  <defs>
+    <linearGradient id="bgA" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0B1220"/>
+      <stop offset="100%" stop-color="#050913"/>
+    </linearGradient>
+    <linearGradient id="gA" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#4ADE80"/>
+      <stop offset="100%" stop-color="#22C55E"/>
+    </linearGradient>
+  </defs>
+  <rect x="40" y="40" width="944" height="944" rx="220" fill="url(#bgA)"/>
+  <g transform="translate(0,-10)">
+    <ellipse cx="512" cy="330" rx="200" ry="64" fill="#0f172a" opacity=".35"/>
+    <rect x="312" y="330" width="400" height="130" rx="65" fill="#15803d"/>
+    <ellipse cx="512" cy="330" rx="200" ry="64" fill="url(#gA)"/>
+    <rect x="494" y="245" width="36" height="180" rx="18" fill="#0b1220" opacity=".88"/>
+  </g>
+  <text x="512" y="678" text-anchor="middle" font-family="Inter, Segoe UI, Arial" font-size="106" font-weight="700" fill="#ECFDF5">SplitMate</text>
+</svg>
