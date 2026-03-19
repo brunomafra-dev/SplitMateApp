@@ -6,11 +6,7 @@ export function getAuthRedirectUrl(pathname: string = '/auth/callback'): string 
 export function getCanonicalSiteUrl(): string {
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim()
   if (siteUrl) {
-    const normalized = siteUrl.replace(/\/$/, '')
-    if (normalized.includes('divideai-eta.vercel.app')) {
-      return 'https://splitmateapp.vercel.app'
-    }
-    return normalized
+    return siteUrl.replace(/\/$/, '')
   }
 
   return 'https://splitmateapp.vercel.app'
